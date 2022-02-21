@@ -27,11 +27,6 @@ try {
         token: botToken,
         chatId: chatId,
         text: msgText,
-        inlineKeyboardMarkup: [
-            {
-                text: `[URL] Commit `
-            }
-        ]
     }
 
     Object.keys(params).forEach(key => url.searchParams.append(key, params[key]))
