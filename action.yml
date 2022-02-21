@@ -14,6 +14,10 @@ inputs:
   msg-text:
     description: 'Notification text'
     required: false
+  parseMode:
+    description: 'Msg text formatting mode'
+    required: false
+    default: 'HTML'
 outputs:
   result: # id of output
     description: 'Result of sending notification'

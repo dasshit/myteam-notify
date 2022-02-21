@@ -5,21 +5,38 @@ import fetch from "node-fetch";
 import YAML from 'yaml'
 
 
+function assembleMsg(github_context) {
+
+    const payload = JSON.stringify(github_context, undefined, 2)
+
+    console.log(payload)
+
+    let newMsgText = `<code><a href="${payload.sender.html_url}">${payload.sender.login} did some changes in repository\n\n\n`
+
+    newMsgText += YAML.stringify(
+        JSON.stringify(payload.commits)
+    )
+
+    newMsgText += '<code>'
+
+    return newMsgText
+}
+
+
 try {
     const apiUrl = core.getInput('api-url')
     const botToken = core.getInput('bot-token')
     const chatId = core.getInput('chat-id')
     const msgText = core.getInput('msg-text')
+    const parseMode = core.getInput('parseMode')
 
-    const payload = JSON.stringify(github.context.payload, undefined, 2)
-    console.log(`The event payload: ${payload}`);
-
-    var url = new URL(`${apiUrl}/messages/sendText`)
+    let url = new URL(`${apiUrl}/messages/sendText`)
 
     const params = {
         token: botToken,
         chatId: chatId,
-        text: msgText || YAML.stringify(github.context.payload),
+        text: msgText || assembleMsg(github.context.payload),
+        parseMode:parseMode
     }
 
     Object.keys(params).forEach(key => url.searchParams.append(key, params[key]))
