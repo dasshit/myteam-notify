@@ -5,14 +5,6 @@ import fetch from "node-fetch";
 import YAML from 'yaml'
 
 
-function jsonToYaml(payload) {
-    const doc = new YAML.Document();
-    doc.contents = payload;
-
-    return doc.toString()
-}
-
-
 try {
     const apiUrl = core.getInput('api-url')
     const botToken = core.getInput('bot-token')
@@ -27,7 +19,7 @@ try {
     const params = {
         token: botToken,
         chatId: chatId,
-        text: msgText || jsonToYaml(payload),
+        text: msgText || YAML.stringify(payload),
     }
 
     Object.keys(params).forEach(key => url.searchParams.append(key, params[key]))
