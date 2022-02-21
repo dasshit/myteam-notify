@@ -1,28 +1,21 @@
-# myteam-notify javascript action
+# Myteam-notify (Github Actions) (VK Teams)
 
-Fast way to send notification via ICQ/Myteam Bot API
+<img src="https://icq.com/botapi/res/logo_icq_new.png" width="30%">
+<img src="https://myteam.mail.ru/botapi/res/logo_myteam.png" width="30%">
 
-## Inputs
+Простой способ отправить уведомление в VK Teams/ICQ через Bot API
 
-## `api-url`
+## Входные параметры
 
-**Required** 
-Bot API URL (ICQ/Myteam). 
-Default `"World"`.
+| Параметр      | Обязательность |                    Описание                     | Значение по-умолчанию         |
+|---------------|:--------------:|:-----------------------------------------------:|:------------------------------|
+| **api-url**   |    **true**    |           Bot API URL (ICQ/VK Teams)            | https://myteam.mail.ru/bot/v1 |
+| **bot-token** |    **true**    |                    Bot token                    |                               |
+| **chat-id**   |    **true**    | ID чата, в который должны приходить уведомления | -                             |
+| **msg-text**  |     false      |                 Текст сообщения                 | См. ниже                      |
+| **parseMode** |     false      |              Режим форматирования               | HTML                          |
 
-## `bot-token`
-
-**Required**
-Bot token.
-
-## `chat-id`
-
-**Required**
-Notification chat ID (or stamp from chat URL).
-
-## `msg-text`
-
-Notification text. Default will send msg with next format
+## Формат сообщения по-умолчанию
 
 ```
 USER did some changes in repository
@@ -41,36 +34,23 @@ USER did some changes in repository
   url: https://github.com/LOGIN/REPO/commit/HASH
 ```
 
-
-```html
-<code><a href="${github.sender.html_url}">${github.sender.login}</a> did some changes in repository
-
-- author:
-    email: EMAIL
-    name: NAME
-  committer:
-    email: EMAIL
-    name: NAME
-  distinct: true
-  id: HASH
-  message: ***
-  timestamp: 1970-02-21T20:07:23+03:00
-  tree_id: HASH
-  url: https://github.com/LOGIN/REPO/commit/HASH
-</code>
-```
-
-## `parseMode`
-
-Msg text formatting mode
-
-## Outputs
+## Выходные параметры
 
 ## `result`
 
-Result of sending notification
+Результат запроса на отправку уведомления
 
-## Example usage
+```json
+{"ok": true, "msgId": "214125315135335"}
+```
+
+В случае ошибки:
+
+```json
+{"ok": false, "error": "Error description"}
+```
+
+## Пример использования
 
 ```yaml
 on: [push]
