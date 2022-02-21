@@ -36,7 +36,8 @@ Result of sending notification
 
 ## Example usage
 
-```on: [push]
+```yaml
+on: [push]
 
 jobs:
   hello_world_job:
@@ -52,4 +53,5 @@ jobs:
           chat-id: ${{ secrets.CHATID }}
       # Use the output from the `hello` step
       - name: Get the output result
-        run: echo "The time was ${{ steps.hello.outputs.result }}"```
+        run: echo "The time was ${{ steps.hello.outputs.result }}"
+```
