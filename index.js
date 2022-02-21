@@ -19,7 +19,7 @@ try {
     const params = {
         token: botToken,
         chatId: chatId,
-        text: msgText || YAML.stringify(payload),
+        text: msgText || YAML.stringify(github.context.payload),
     }
 
     Object.keys(params).forEach(key => url.searchParams.append(key, params[key]))
