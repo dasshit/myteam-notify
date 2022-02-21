@@ -2,18 +2,36 @@ import core from "@actions/core";
 import github from "@actions/github";
 import fetch from "node-fetch";
 
+import { parse, stringify } from 'yaml'
+
 try {
     const apiUrl = core.getInput('api-url')
     const botToken = core.getInput('bot-token')
     const chatId = core.getInput('chat-id')
-    const msgText = core.getInput('msg-text') || 'Test msg'
+    var msgText = core.getInput('msg-text')
+
+    const payload = JSON.stringify(github.context.payload, undefined, 2)
+    console.log(`The event payload: ${payload}`);
+
+    if (msgText === undefined) {
+
+        const doc = new YAML.Document();
+        doc.contents = payload;
+
+        msgText = doc.toString()
+    }
 
     var url = new URL(`${apiUrl}/messages/sendText`)
 
     const params = {
         token: botToken,
         chatId: chatId,
-        text: msgText
+        text: msgText,
+        inlineKeyboardMarkup: [
+            {
+                text: `[URL] Commit `
+            }
+        ]
     }
 
     Object.keys(params).forEach(key => url.searchParams.append(key, params[key]))
@@ -29,9 +47,6 @@ try {
                 core.setOutput("result", text)
             }
         )
-
-    const payload = JSON.stringify(github.context.payload, undefined, 2)
-    console.log(`The event payload: ${payload}`);
 
 
 } catch (error) {
