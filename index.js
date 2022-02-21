@@ -7,7 +7,7 @@ import YAML from 'yaml'
 
 function assembleMsg(github) {
 
-    let newMsgText = `<a href="${github.sender.html_url}">${github.sender.login} <code>did some changes in repository\n\n\n`
+    let newMsgText = `<a href="${github.sender.html_url}">${github.sender.login}</a> <code>did some changes in repository\n\n\n`
 
     newMsgText += YAML.stringify(github.commits)
 
