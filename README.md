@@ -22,7 +22,25 @@ Notification chat ID (or stamp from chat URL).
 
 ## `msg-text`
 
-Notification text
+Notification text. Default will send msg with next format
+
+```html
+<code><a href="${github.sender.html_url}">${github.sender.login}</a> did some changes in repository
+
+- author:
+    email: EMAIL
+    name: NAME
+  committer:
+    email: EMAIL
+    name: NAME
+  distinct: true
+  id: HASH
+  message: ***
+  timestamp: 1970-02-21T20:07:23+03:00
+  tree_id: HASH
+  url: https://github.com/LOGIN/REPO/commit/HASH
+</code>
+```
 
 ## `parseMode`
 
