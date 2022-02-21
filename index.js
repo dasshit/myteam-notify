@@ -18,6 +18,8 @@ try {
 
     Object.keys(params).forEach(key => url.searchParams.append(key, params[key]))
 
+    console.log(`URL: ${url}`)
+
     fetch(
         url.toString()
     ).then(res => res.text())
