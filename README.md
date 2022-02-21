@@ -24,6 +24,10 @@ Notification chat ID (or stamp from chat URL).
 
 Notification text
 
+## `parseMode`
+
+Msg text formatting mode
+
 ## Outputs
 
 ## `result`
@@ -32,6 +36,20 @@ Result of sending notification
 
 ## Example usage
 
-uses: actions/myteam-notify@v1.1<br>
-with:<br>&nbsp;&nbsp;
-who-to-greet: 'Mona the Octocat'
+```on: [push]
+
+jobs:
+  hello_world_job:
+    runs-on: ubuntu-latest
+    name: Testing notify
+    steps:
+      - name: Hello world action step
+        id: hello
+        uses: dasshit/myteam-notify@v3.3
+        with:
+          api-url: ${{ secrets.BOTAPI }}
+          bot-token: ${{ secrets.BOTTOKEN }}
+          chat-id: ${{ secrets.CHATID }}
+      # Use the output from the `hello` step
+      - name: Get the output result
+        run: echo "The time was ${{ steps.hello.outputs.result }}"```
