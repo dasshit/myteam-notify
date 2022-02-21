@@ -5,16 +5,12 @@ import fetch from "node-fetch";
 import YAML from 'yaml'
 
 
-function assembleMsg(github_context) {
+function assembleMsg(github) {
 
-    const payload = JSON.stringify(github_context, undefined, 2)
-
-    console.log(payload)
-
-    let newMsgText = `<code><a href="${payload.sender.html_url}">${payload.sender.login} did some changes in repository\n\n\n`
+    let newMsgText = `<code><a href="${github.sender.html_url}">${github.sender.login} did some changes in repository\n\n\n`
 
     newMsgText += YAML.stringify(
-        JSON.stringify(payload.commits)
+        JSON.stringify(github.commits)
     )
 
     newMsgText += '<code>'
