@@ -1,0 +1,22 @@
+name: 'myteam-notify'
+description: 'Fast way to send notification via ICQ/Myteam Bot API'
+inputs:
+  api-url:
+    description: 'Bot API URL (ICQ/Myteam)'
+    required: true
+    default: 'https://myteam.mail.ru/bot/v1'
+  bot-token:
+    description: 'Bot token'
+    required: true
+  chat-id:
+    description: 'Notification chat ID (or stamp from chat URL)'
+    required: true
+  msg-text:
+    description: 'Notification text'
+    required: false
+outputs:
+  result: # id of output
+    description: 'Result of sending notification'
+runs:
+  using: 'node16'
+  main: 'index.js'
