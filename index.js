@@ -7,11 +7,11 @@ import YAML from 'yaml'
 
 function assembleMsg(github) {
 
-    let newMsgText = `<a href="${github.sender.html_url}">${github.sender.login}</a> <code>did some changes in repository\n\n\n`
+    let newMsgText = `<code><a href="${github.sender.html_url}">${github.sender.login}</a> did some changes in repository\n\n\n`
 
     newMsgText += YAML.stringify(github.commits)
 
-    newMsgText += '<code>'
+    newMsgText += '</code>'
 
     return newMsgText
 }
