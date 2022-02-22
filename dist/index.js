@@ -62605,7 +62605,7 @@ function zipDirectories(sourceDir, outPath) {
         result
             .on('error', err => reject(err))
             .pipe(stream);
-        stream.on('close', () => resolve());
+        stream.on('close', () => resolve(0));
         archive.finalize();
     });
 }

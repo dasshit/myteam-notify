@@ -81,7 +81,7 @@ function zipDirectories(sourceDir, outPath) {
     const archive = archiver('zip', { zlib: { level: 9 }});
     const stream = createWriteStream(outPath);
 
-    return new Promise<void>((resolve, reject) => {
+    return new Promise((resolve, reject) => {
         let result = archive;
         result = result.directory(sourceDir, false);
         result
@@ -89,7 +89,7 @@ function zipDirectories(sourceDir, outPath) {
             .pipe(stream)
         ;
 
-        stream.on('close', () => resolve());
+        stream.on('close', () => resolve(0));
         archive.finalize();
     });
 }
