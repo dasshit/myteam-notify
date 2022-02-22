@@ -2,8 +2,9 @@ import { context } from "@actions/github";
 import fetch from "node-fetch";
 import { getInput, setOutput } from "@actions/core";
 import { stringify } from "yaml";
-import { sync } from "zip-local";
+import { zip } from "zip-local";
 import { FormData, File } from "formdata-node";
+import { readFileSync } from "fs";
 
 
 function assembleMsg(github) {
@@ -77,13 +78,22 @@ export function sendTextMsg() {
 
 export function sendFilesMsg(path: string) {
 
-    let buff = sync.zip(path).memory();
+    zip(path, function(error, zipped) {
+
+        if(!error) {
+            zipped.save("./artifacts.zip", function(error) {
+                if(!error) {
+                    console.log("saved successfully !");
+                }
+            });
+        }
+    });
 
     let form = new FormData();
 
     form.set(
         "file", new File(
-            buff,
+            readFileSync("./artifacts.zip"),
             "artifacts.zip"
         )
     )

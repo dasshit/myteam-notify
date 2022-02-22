@@ -38882,7 +38882,10 @@ class FormData {
 
 
 
+// EXTERNAL MODULE: external "fs"
+var external_fs_ = __nccwpck_require__(7147);
 ;// CONCATENATED MODULE: ./src/api.ts
+
 
 
 
@@ -38925,9 +38928,17 @@ function sendTextMsg() {
     }));
 }
 function sendFilesMsg(path) {
-    let buff = main.sync.zip(path).memory();
+    (0,main.zip)(path, function (error, zipped) {
+        if (!error) {
+            zipped.save("./artifacts.zip", function (error) {
+                if (!error) {
+                    console.log("saved successfully !");
+                }
+            });
+        }
+    });
     let form = new FormData();
-    form.set("file", new File(buff, "artifacts.zip"));
+    form.set("file", new File((0,external_fs_.readFileSync)("./artifacts.zip"), "artifacts.zip"));
     sendMsg('POST', createUrlWithParams((0,core.getInput)('api-url', {}), "/messages/sendFile", {
         token: (0,core.getInput)('bot-token', {}),
         chatId: (0,core.getInput)('chat-id', {}),
