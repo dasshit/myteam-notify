@@ -62553,7 +62553,6 @@ var archiver = __nccwpck_require__(7531);
 var archiver_default = /*#__PURE__*/__nccwpck_require__.n(archiver);
 // EXTERNAL MODULE: external "fs"
 var external_fs_ = __nccwpck_require__(7147);
-var external_fs_default = /*#__PURE__*/__nccwpck_require__.n(external_fs_);
 ;// CONCATENATED MODULE: ./src/api.ts
 
 
@@ -62599,7 +62598,7 @@ function sendTextMsg() {
 }
 function zipDirectories(sourceDir, outPath) {
     const archive = archiver_default()('zip', { zlib: { level: 9 } });
-    const stream = external_fs_default().createWriteStream(outPath);
+    const stream = (0,external_fs_.createWriteStream)(outPath);
     return new Promise((resolve, reject) => {
         let result = archive;
         result = result.directory(sourceDir, false);

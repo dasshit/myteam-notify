@@ -1,10 +1,10 @@
 import {context} from "@actions/github";
 import fetch from "node-fetch";
-import { getInput, setOutput } from "@actions/core";
-import { stringify } from "yaml";
-import { File, FormData } from "formdata-node";
+import {getInput, setOutput} from "@actions/core";
+import {stringify} from "yaml";
+import {File, FormData} from "formdata-node";
 import archiver from 'archiver';
-import { readFileSync, createWriteStream } from 'fs';
+import {readFileSync} from 'fs';
 
 
 function assembleMsg(github) {
@@ -79,7 +79,7 @@ export function sendTextMsg() {
 
 function zipDirectories(sourceDir, outPath) {
     const archive = archiver('zip', { zlib: { level: 9 }});
-    const stream = createWriteStream(outPath);
+    const stream = fs.createWriteStream(outPath);
 
     return new Promise<void>((resolve, reject) => {
         let result = archive;
