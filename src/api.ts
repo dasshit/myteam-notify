@@ -4,7 +4,9 @@ import { getInput, setOutput } from "@actions/core";
 import { stringify } from "yaml";
 import { File, FormData } from "formdata-node";
 import archiver from 'archiver';
-import { readFileSync, createWriteStream } from 'fs';
+import { readFileSync, createWriteStream, createReadStream } from 'fs';
+import { getAllFilesSync } from "get-all-files";
+import { basename } from "path";
 
 
 function assembleMsg(github) {
@@ -81,48 +83,45 @@ function zipDirectories(sourceDir, outPath) {
     const archive = archiver('zip', { zlib: { level: 9 }});
     const stream = createWriteStream(outPath);
 
-    return new Promise((resolve, reject) => {
-        let result = archive;
-        result = result.directory(sourceDir, false);
-        result
-            .on('error', err => reject(err))
-            .pipe(stream)
-        ;
-
-        stream.on('close', () => resolve(0));
-        archive.finalize();
+    stream.on('close', function() {
+        console.log(archive.pointer() + ' total bytes');
+        console.log('archiver has been finalized and the output file descriptor has closed.');
     });
+
+    archive.pipe(stream);
+
+    for (let name of getAllFilesSync(sourceDir)) {
+        archive.append(
+            createReadStream(name), { name: basename(name) });
+    }
+
+    archive.finalize();
 }
 
 
 export async function sendFilesMsg(path: string) {
 
-    zipDirectories(path, "./artifacts.zip").then(
-        res => {
-            let form = new FormData();
+    zipDirectories(path, "./artifacts.zip")
 
-            form.set(
-                "file", new File(
-                    readFileSync("./artifacts.zip"),
-                    "artifacts.zip"
-                )
-            )
+    let form = new FormData();
 
-            sendMsg(
-                'POST',
-                createUrlWithParams(
-                    getInput('api-url', {}),
-                    "/messages/sendFile",
-                    {
-                        token: getInput('bot-token', {}),
-                        chatId: getInput('chat-id', {}),
-                    }
-                ),
-                form
-            )
-        }
+    form.set(
+        "file", new File(
+            readFileSync("./artifacts.zip"),
+            "artifacts.zip"
+        )
     )
 
-
-
+    sendMsg(
+        'POST',
+        createUrlWithParams(
+            getInput('api-url', {}),
+            "/messages/sendFile",
+            {
+                token: getInput('bot-token', {}),
+                chatId: getInput('chat-id', {}),
+            }
+        ),
+        form
+    )
 }
