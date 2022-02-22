@@ -18,5 +18,6 @@ export function run() {
 try {
     run();
 } catch (error) {
+    console.log(getInput('files-path', {}))
     setFailed(error.message);
 }
