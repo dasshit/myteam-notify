@@ -1,6 +1,3 @@
-import * as fs from "fs";
-
-
 export class FormData {
     private data = [];
     private files = [];
@@ -15,8 +12,6 @@ export class FormData {
         this.data.push({ name: name, value: value });
     }
     public appendFile(name: string, file: string, content: string) {
-        if (!fs.existsSync(file))
-            throw "File not exist " + file;
         this.files.push({ name: name, filename: file, content: content });
     }
     public toString() {

@@ -38473,10 +38473,7 @@ function fixResponseChunkedTransferBadEnding(request, errorCallback) {
 var yaml_dist = __nccwpck_require__(5508);
 // EXTERNAL MODULE: ./node_modules/zip-local/main.js
 var main = __nccwpck_require__(5438);
-// EXTERNAL MODULE: external "fs"
-var external_fs_ = __nccwpck_require__(7147);
 ;// CONCATENATED MODULE: ./src/FormData.ts
-
 class FormData {
     data = [];
     files = [];
@@ -38491,8 +38488,6 @@ class FormData {
         this.data.push({ name: name, value: value });
     }
     appendFile(name, file, content) {
-        if (!external_fs_.existsSync(file))
-            throw "File not exist " + file;
         this.files.push({ name: name, filename: file, content: content });
     }
     toString() {
