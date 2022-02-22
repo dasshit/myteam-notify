@@ -38933,16 +38933,22 @@ function sendFilesMsg(path) {
             zipped.save("./artifacts.zip", function (error) {
                 if (!error) {
                     console.log("saved successfully !");
+                    let form = new FormData();
+                    form.set("file", new File((0,external_fs_.readFileSync)("./artifacts.zip"), "artifacts.zip"));
+                    sendMsg('POST', createUrlWithParams((0,core.getInput)('api-url', {}), "/messages/sendFile", {
+                        token: (0,core.getInput)('bot-token', {}),
+                        chatId: (0,core.getInput)('chat-id', {}),
+                    }), form);
+                }
+                else {
+                    console.log(error, error.stack);
                 }
             });
         }
+        else {
+            console.log(error, error.stack);
+        }
     });
-    let form = new FormData();
-    form.set("file", new File((0,external_fs_.readFileSync)("./artifacts.zip"), "artifacts.zip"));
-    sendMsg('POST', createUrlWithParams((0,core.getInput)('api-url', {}), "/messages/sendFile", {
-        token: (0,core.getInput)('bot-token', {}),
-        chatId: (0,core.getInput)('chat-id', {}),
-    }), form);
 }
 
 ;// CONCATENATED MODULE: ./src/index.ts

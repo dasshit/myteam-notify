@@ -84,31 +84,36 @@ export function sendFilesMsg(path: string) {
             zipped.save("./artifacts.zip", function(error) {
                 if(!error) {
                     console.log("saved successfully !");
+                    let form = new FormData();
+
+                    form.set(
+                        "file", new File(
+                            readFileSync("./artifacts.zip"),
+                            "artifacts.zip"
+                        )
+                    )
+
+                    sendMsg(
+                        'POST',
+                        createUrlWithParams(
+                            getInput('api-url', {}),
+                            "/messages/sendFile",
+                            {
+                                token: getInput('bot-token', {}),
+                                chatId: getInput('chat-id', {}),
+                            }
+                        ),
+                        form
+                    )
+                } else {
+                    console.log(error, error.stack)
                 }
             });
+        } else {
+            console.log(error, error.stack)
         }
     });
 
-    let form = new FormData();
 
-    form.set(
-        "file", new File(
-            readFileSync("./artifacts.zip"),
-            "artifacts.zip"
-        )
-    )
-
-    sendMsg(
-        'POST',
-        createUrlWithParams(
-            getInput('api-url', {}),
-            "/messages/sendFile",
-            {
-                token: getInput('bot-token', {}),
-                chatId: getInput('chat-id', {}),
-            }
-        ),
-        form
-    )
 
 }
