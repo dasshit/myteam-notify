@@ -5,5 +5,16 @@
     "node-fetch": "^3.2.0",
     "yaml": "2.0.0-10"
   },
-  "type": "module"
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:dasshit/myteam-notify.git"
+  },
+  "version": "1.0-stable",
+  "keywords": [
+    "actions",
+    "github-actions"
+  ],
+  "author": "Valerii Korobov",
+  "license": ""
 }

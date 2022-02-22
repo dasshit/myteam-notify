@@ -17,7 +17,8 @@ function assembleMsg(github) {
 }
 
 
-try {
+export function run() {
+
     const apiUrl = core.getInput('api-url')
     const botToken = core.getInput('bot-token')
     const chatId = core.getInput('chat-id')
@@ -33,7 +34,12 @@ try {
         parseMode:parseMode
     }
 
-    Object.keys(params).forEach(key => url.searchParams.append(key, params[key]))
+    Object.keys(params).forEach(
+        key => {
+            console.log(`${key} => ${params[key]}`)
+            url.searchParams.append(key, params[key])
+        }
+    )
 
     console.log(`URL: ${url}`)
 
@@ -47,7 +53,11 @@ try {
             }
         )
 
+}
 
+
+try {
+    run();
 } catch (error) {
     core.setFailed(error.message);
 }
