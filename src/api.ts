@@ -97,28 +97,32 @@ function zipDirectories(sourceDir, outPath) {
 
 export async function sendFilesMsg(path: string) {
 
-    await zipDirectories(path, "./artifacts.zip")
+    zipDirectories(path, "./artifacts.zip").then(
+        res => {
+            let form = new FormData();
 
-    let form = new FormData();
+            form.set(
+                "file", new File(
+                    readFileSync("./artifacts.zip"),
+                    "artifacts.zip"
+                )
+            )
 
-    form.set(
-        "file", new File(
-            readFileSync("./artifacts.zip"),
-            "artifacts.zip"
-        )
+            sendMsg(
+                'POST',
+                createUrlWithParams(
+                    getInput('api-url', {}),
+                    "/messages/sendFile",
+                    {
+                        token: getInput('bot-token', {}),
+                        chatId: getInput('chat-id', {}),
+                    }
+                ),
+                form
+            )
+        }
     )
 
-    sendMsg(
-        'POST',
-        createUrlWithParams(
-            getInput('api-url', {}),
-            "/messages/sendFile",
-            {
-                token: getInput('bot-token', {}),
-                chatId: getInput('chat-id', {}),
-            }
-        ),
-        form
-    )
+
 
 }

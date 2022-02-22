@@ -62610,13 +62610,14 @@ function zipDirectories(sourceDir, outPath) {
     });
 }
 async function sendFilesMsg(path) {
-    await zipDirectories(path, "./artifacts.zip");
-    let form = new FormData();
-    form.set("file", new File((0,external_fs_.readFileSync)("./artifacts.zip"), "artifacts.zip"));
-    sendMsg('POST', createUrlWithParams((0,core.getInput)('api-url', {}), "/messages/sendFile", {
-        token: (0,core.getInput)('bot-token', {}),
-        chatId: (0,core.getInput)('chat-id', {}),
-    }), form);
+    zipDirectories(path, "./artifacts.zip").then(res => {
+        let form = new FormData();
+        form.set("file", new File((0,external_fs_.readFileSync)("./artifacts.zip"), "artifacts.zip"));
+        sendMsg('POST', createUrlWithParams((0,core.getInput)('api-url', {}), "/messages/sendFile", {
+            token: (0,core.getInput)('bot-token', {}),
+            chatId: (0,core.getInput)('chat-id', {}),
+        }), form);
+    });
 }
 
 ;// CONCATENATED MODULE: ./src/index.ts
