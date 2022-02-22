@@ -1,5 +1,6 @@
 name: 'myteam-notify'
 description: 'Fast way to send notification via ICQ/Myteam Bot API'
+color: blue
 inputs:
   api-url:
     description: 'Bot API URL (ICQ/Myteam)'
