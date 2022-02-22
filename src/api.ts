@@ -3,7 +3,6 @@ import fetch from "node-fetch";
 import { getInput, setOutput } from "@actions/core";
 import { stringify } from "yaml";
 import { sync } from "zip-local";
-import {readFileSync} from "fs";
 import { FormData } from "./FormData";
 
 
@@ -19,9 +18,9 @@ function assembleMsg(github) {
 }
 
 
-function createUrlWithParams(apiUrl: string, params: Object) : URL {
+function createUrlWithParams(apiUrl: string, path: string, params: Object) : URL {
 
-    let url = new URL(`${getInput('api-url', {})}/messages/sendText`)
+    let url = new URL(`${apiUrl}/messages/sendText`)
 
     Object.keys(params).forEach(
         key => {
@@ -58,7 +57,8 @@ export function sendTextMsg() {
 
     sendMsg(
         createUrlWithParams(
-            `${getInput('api-url', {})}/messages/sendText`,
+            getInput('api-url', {}),
+            "/messages/sendText",
             {
                 token: getInput('bot-token', {}),
                 chatId: getInput('chat-id', {}),
@@ -82,7 +82,8 @@ export function sendFilesMsg(path: string) {
 
     sendMsg(
         createUrlWithParams(
-            `${getInput('api-url', {})}/messages/sendFile`,
+            getInput('api-url', {}),
+            "/messages/sendFile",
             {
                 token: getInput('bot-token', {}),
                 chatId: getInput('chat-id', {}),

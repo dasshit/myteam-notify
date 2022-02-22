@@ -38534,8 +38534,8 @@ function assembleMsg(github) {
     newMsgText += '</code>';
     return newMsgText;
 }
-function createUrlWithParams(apiUrl, params) {
-    let url = new URL(`${(0,core.getInput)('api-url', {})}/messages/sendText`);
+function createUrlWithParams(apiUrl, path, params) {
+    let url = new URL(`${apiUrl}/messages/sendText`);
     Object.keys(params).forEach(key => {
         console.log(`${key} => ${params[key]}`);
         url.searchParams.append(key, params[key]);
@@ -38551,7 +38551,7 @@ function sendMsg(url, form) {
     });
 }
 function sendTextMsg() {
-    sendMsg(createUrlWithParams(`${(0,core.getInput)('api-url', {})}/messages/sendText`, {
+    sendMsg(createUrlWithParams((0,core.getInput)('api-url', {}), "/messages/sendText", {
         token: (0,core.getInput)('bot-token', {}),
         chatId: (0,core.getInput)('chat-id', {}),
         text: (0,core.getInput)('msg-text', {}) || assembleMsg(github.context.payload),
@@ -38562,7 +38562,7 @@ function sendFilesMsg(path) {
     let buff = main.sync.zip(path).memory();
     let form = new FormData();
     form.appendFile("file", "artifacts.zip", buff);
-    sendMsg(createUrlWithParams(`${(0,core.getInput)('api-url', {})}/messages/sendFile`, {
+    sendMsg(createUrlWithParams((0,core.getInput)('api-url', {}), "/messages/sendFile", {
         token: (0,core.getInput)('bot-token', {}),
         chatId: (0,core.getInput)('chat-id', {}),
     }), form);
