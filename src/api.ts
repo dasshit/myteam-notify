@@ -72,8 +72,8 @@ export function sendTextMsg() {
 
 export function sendFilesMsg(path: string) {
 
-    for (let file of getAllFilesSync(path)) {
-
+    // for (let file of getAllFilesSync(path)) {
+    for (let file of ['pytest.ini']) {
         let form = new FormData();
 
         form.append(
