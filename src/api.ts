@@ -3,7 +3,7 @@ import fetch from "node-fetch";
 import { getInput, setOutput } from "@actions/core";
 import { stringify } from "yaml";
 import { File, FormData } from "formdata-node";
-import {createWriteStream, createReadStream, open, read, readFileSync} from 'fs';
+import { readFileSync} from 'fs';
 import { basename } from "path";
 
 
