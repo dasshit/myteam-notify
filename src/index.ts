@@ -9,6 +9,8 @@ export function run() {
     let filesPath = getInput('bot-token', {})
 
     if (filesPath) {
+
+        console.log(`filesPath: ${filesPath}`)
         sendFilesMsg(filesPath)
     }
 
