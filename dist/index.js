@@ -62606,24 +62606,43 @@ function sendTextMsg() {
 function zipDirectories(sourceDir, outPath) {
     const archive = archiver_default()('zip', { zlib: { level: 9 } });
     const stream = (0,external_fs_.createWriteStream)(outPath);
-    stream.on('close', function () {
-        console.log(archive.pointer() + ' total bytes');
-        console.log('archiver has been finalized and the output file descriptor has closed.');
+    return new Promise((resolve, reject) => {
+        stream.on('close', function () {
+            console.log(archive.pointer() + ' total bytes');
+            console.log('archiver has been finalized and the output file descriptor has closed.');
+            resolve();
+        });
+        archive.on('warning', function (err) {
+            if (err.code === 'ENOENT') {
+                console.log(err, err.stack);
+            }
+            else {
+                console.log(err, err.stack);
+                reject();
+                throw err;
+            }
+        });
+        archive.on('error', function (err) {
+            console.log(err, err.stack);
+            reject();
+            throw err;
+        });
+        archive.pipe(stream);
+        for (let name of dist_s(sourceDir)) {
+            archive.append((0,external_fs_.createReadStream)(name), { name: (0,external_path_.basename)(name) });
+        }
+        archive.finalize();
     });
-    archive.pipe(stream);
-    for (let name of dist_s(sourceDir)) {
-        archive.append((0,external_fs_.createReadStream)(name), { name: (0,external_path_.basename)(name) });
-    }
-    archive.finalize();
 }
 async function sendFilesMsg(path) {
-    zipDirectories(path, "./artifacts.zip");
-    let form = new FormData();
-    form.set("file", new File((0,external_fs_.readFileSync)("./artifacts.zip"), "artifacts.zip"));
-    sendMsg('POST', createUrlWithParams((0,core.getInput)('api-url', {}), "/messages/sendFile", {
-        token: (0,core.getInput)('bot-token', {}),
-        chatId: (0,core.getInput)('chat-id', {}),
-    }), form);
+    zipDirectories(path, "./artifacts.zip").then(res => {
+        let form = new FormData();
+        form.set("file", new File((0,external_fs_.readFileSync)("./artifacts.zip"), "artifacts.zip"));
+        sendMsg('POST', createUrlWithParams((0,core.getInput)('api-url', {}), "/messages/sendFile", {
+            token: (0,core.getInput)('bot-token', {}),
+            chatId: (0,core.getInput)('chat-id', {}),
+        }), form);
+    });
 }
 
 ;// CONCATENATED MODULE: ./src/index.ts
