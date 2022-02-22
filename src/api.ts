@@ -3,7 +3,7 @@ import fetch from "node-fetch";
 import { getInput, setOutput } from "@actions/core";
 import { stringify } from "yaml";
 import { FormData, File } from "formdata-node";
-import { zipdir } from 'zip-dir';
+import { zipBuffer } from 'zip-dir';
 
 
 function assembleMsg(github) {
@@ -77,7 +77,7 @@ export function sendTextMsg() {
 
 export async function sendFilesMsg(path: string) {
 
-    zipdir(path, function (err, buffer) {
+    zipBuffer(path, function (err, buffer) {
         let form = new FormData();
 
         form.set(

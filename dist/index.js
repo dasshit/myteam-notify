@@ -44726,7 +44726,7 @@ function sendTextMsg() {
     }));
 }
 async function sendFilesMsg(path) {
-    (0,zip_dir.zipdir)(path, function (err, buffer) {
+    (0,zip_dir.zipBuffer)(path, function (err, buffer) {
         let form = new FormData();
         form.set("file", new File(buffer, "artifacts.zip"));
         sendMsg('POST', createUrlWithParams((0,core.getInput)('api-url', {}), "/messages/sendFile", {
