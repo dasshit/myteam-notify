@@ -3,9 +3,9 @@ import fetch from "node-fetch";
 import { getInput, setOutput } from "@actions/core";
 import { stringify } from "yaml"
 import { FormData, File } from "formdata-node";
-import { readFileSync } from "fs";
-import { basename } from "path";
-import { getAllFilesSync } from 'get-all-files';
+// import { sync } from "zipper";
+const zipper = require("zipper");
+
 
 function assembleMsg(github) {
 
@@ -72,26 +72,25 @@ export function sendTextMsg() {
 
 export function sendFilesMsg(path: string) {
 
-    for (let file of getAllFilesSync(path)) {
-        let form = new FormData();
+    let buff = zipper.sync.zip(path).memory();
 
-        form.append(
-            "file", new File(
-                readFileSync(file), basename(file)
-            )
+    let form = new FormData();
+
+    form.append(
+        "file", new File(
+            buff, "artifacts.zip"
         )
+    )
 
-        sendMsg(
-            createUrlWithParams(
-                `${getInput('api-url', {})}/messages/sendFile`,
-                {
-                    token: getInput('bot-token', {}),
-                    chatId: getInput('chat-id', {}),
-                }
-            ),
-            form
-        )
-
-    }
+    sendMsg(
+        createUrlWithParams(
+            `${getInput('api-url', {})}/messages/sendFile`,
+            {
+                token: getInput('bot-token', {}),
+                chatId: getInput('chat-id', {}),
+            }
+        ),
+        form
+    )
 
 }
