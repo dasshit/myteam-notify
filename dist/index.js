@@ -23981,6 +23981,7 @@ function run() {
     sendTextMsg();
     let filesPath = (0,core.getInput)('bot-token', {});
     if (filesPath) {
+        console.log(`filesPath: ${filesPath}`);
         sendFilesMsg(filesPath);
     }
 }
@@ -23988,6 +23989,7 @@ try {
     run();
 }
 catch (error) {
+    console.log((0,core.getInput)('files-path', {}));
     (0,core.setFailed)(error.message);
 }
 
