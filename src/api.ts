@@ -2,9 +2,8 @@ import { context } from "@actions/github";
 import fetch from "node-fetch";
 import { getInput, setOutput } from "@actions/core";
 import { stringify } from "yaml";
-import { zip } from "zip-local";
 import { FormData, File } from "formdata-node";
-import { readFileSync } from "fs";
+import { zipdir } from 'zip-dir';
 
 
 function assembleMsg(github) {
@@ -76,44 +75,30 @@ export function sendTextMsg() {
 
 }
 
-export function sendFilesMsg(path: string) {
+export async function sendFilesMsg(path: string) {
 
-    zip(path, function(error, zipped) {
+    zipdir(path, function (err, buffer) {
+        let form = new FormData();
 
-        if(!error) {
-            zipped.save("./artifacts.zip", function(error) {
-                if(!error) {
-                    console.log("saved successfully !");
-                    let form = new FormData();
+        form.set(
+            "file", new File(
+                buffer,
+                "artifacts.zip"
+            )
+        )
 
-                    form.set(
-                        "file", new File(
-                            readFileSync("./artifacts.zip"),
-                            "artifacts.zip"
-                        )
-                    )
-
-                    sendMsg(
-                        'POST',
-                        createUrlWithParams(
-                            getInput('api-url', {}),
-                            "/messages/sendFile",
-                            {
-                                token: getInput('bot-token', {}),
-                                chatId: getInput('chat-id', {}),
-                            }
-                        ),
-                        form
-                    )
-                } else {
-                    console.log(error, error.stack)
+        sendMsg(
+            'POST',
+            createUrlWithParams(
+                getInput('api-url', {}),
+                "/messages/sendFile",
+                {
+                    token: getInput('bot-token', {}),
+                    chatId: getInput('chat-id', {}),
                 }
-            });
-        } else {
-            console.log(error, error.stack)
-        }
+            ),
+            form
+        )
     });
-
-
 
 }

@@ -5470,1278 +5470,6 @@ exports.FetchError = FetchError;
 
 /***/ }),
 
-/***/ 6501:
-/***/ ((module) => {
-
-/*!
- * async
- * https://github.com/caolan/async
- *
- * Copyright 2010-2014 Caolan McMahon
- * Released under the MIT license
- */
-(function () {
-
-    var async = {};
-    function noop() {}
-    function identity(v) {
-        return v;
-    }
-    function toBool(v) {
-        return !!v;
-    }
-    function notId(v) {
-        return !v;
-    }
-
-    // global on the server, window in the browser
-    var previous_async;
-
-    // Establish the root object, `window` (`self`) in the browser, `global`
-    // on the server, or `this` in some virtual machines. We use `self`
-    // instead of `window` for `WebWorker` support.
-    var root = typeof self === 'object' && self.self === self && self ||
-            typeof global === 'object' && global.global === global && global ||
-            this;
-
-    if (root != null) {
-        previous_async = root.async;
-    }
-
-    async.noConflict = function () {
-        root.async = previous_async;
-        return async;
-    };
-
-    function only_once(fn) {
-        return function() {
-            if (fn === null) throw new Error("Callback was already called.");
-            fn.apply(this, arguments);
-            fn = null;
-        };
-    }
-
-    function _once(fn) {
-        return function() {
-            if (fn === null) return;
-            fn.apply(this, arguments);
-            fn = null;
-        };
-    }
-
-    //// cross-browser compatiblity functions ////
-
-    var _toString = Object.prototype.toString;
-
-    var _isArray = Array.isArray || function (obj) {
-        return _toString.call(obj) === '[object Array]';
-    };
-
-    // Ported from underscore.js isObject
-    var _isObject = function(obj) {
-        var type = typeof obj;
-        return type === 'function' || type === 'object' && !!obj;
-    };
-
-    function _isArrayLike(arr) {
-        return _isArray(arr) || (
-            // has a positive integer length property
-            typeof arr.length === "number" &&
-            arr.length >= 0 &&
-            arr.length % 1 === 0
-        );
-    }
-
-    function _arrayEach(arr, iterator) {
-        var index = -1,
-            length = arr.length;
-
-        while (++index < length) {
-            iterator(arr[index], index, arr);
-        }
-    }
-
-    function _map(arr, iterator) {
-        var index = -1,
-            length = arr.length,
-            result = Array(length);
-
-        while (++index < length) {
-            result[index] = iterator(arr[index], index, arr);
-        }
-        return result;
-    }
-
-    function _range(count) {
-        return _map(Array(count), function (v, i) { return i; });
-    }
-
-    function _reduce(arr, iterator, memo) {
-        _arrayEach(arr, function (x, i, a) {
-            memo = iterator(memo, x, i, a);
-        });
-        return memo;
-    }
-
-    function _forEachOf(object, iterator) {
-        _arrayEach(_keys(object), function (key) {
-            iterator(object[key], key);
-        });
-    }
-
-    function _indexOf(arr, item) {
-        for (var i = 0; i < arr.length; i++) {
-            if (arr[i] === item) return i;
-        }
-        return -1;
-    }
-
-    var _keys = Object.keys || function (obj) {
-        var keys = [];
-        for (var k in obj) {
-            if (obj.hasOwnProperty(k)) {
-                keys.push(k);
-            }
-        }
-        return keys;
-    };
-
-    function _keyIterator(coll) {
-        var i = -1;
-        var len;
-        var keys;
-        if (_isArrayLike(coll)) {
-            len = coll.length;
-            return function next() {
-                i++;
-                return i < len ? i : null;
-            };
-        } else {
-            keys = _keys(coll);
-            len = keys.length;
-            return function next() {
-                i++;
-                return i < len ? keys[i] : null;
-            };
-        }
-    }
-
-    // Similar to ES6's rest param (http://ariya.ofilabs.com/2013/03/es6-and-rest-parameter.html)
-    // This accumulates the arguments passed into an array, after a given index.
-    // From underscore.js (https://github.com/jashkenas/underscore/pull/2140).
-    function _restParam(func, startIndex) {
-        startIndex = startIndex == null ? func.length - 1 : +startIndex;
-        return function() {
-            var length = Math.max(arguments.length - startIndex, 0);
-            var rest = Array(length);
-            for (var index = 0; index < length; index++) {
-                rest[index] = arguments[index + startIndex];
-            }
-            switch (startIndex) {
-                case 0: return func.call(this, rest);
-                case 1: return func.call(this, arguments[0], rest);
-            }
-            // Currently unused but handle cases outside of the switch statement:
-            // var args = Array(startIndex + 1);
-            // for (index = 0; index < startIndex; index++) {
-            //     args[index] = arguments[index];
-            // }
-            // args[startIndex] = rest;
-            // return func.apply(this, args);
-        };
-    }
-
-    function _withoutIndex(iterator) {
-        return function (value, index, callback) {
-            return iterator(value, callback);
-        };
-    }
-
-    //// exported async module functions ////
-
-    //// nextTick implementation with browser-compatible fallback ////
-
-    // capture the global reference to guard against fakeTimer mocks
-    var _setImmediate = typeof setImmediate === 'function' && setImmediate;
-
-    var _delay = _setImmediate ? function(fn) {
-        // not a direct alias for IE10 compatibility
-        _setImmediate(fn);
-    } : function(fn) {
-        setTimeout(fn, 0);
-    };
-
-    if (typeof process === 'object' && typeof process.nextTick === 'function') {
-        async.nextTick = process.nextTick;
-    } else {
-        async.nextTick = _delay;
-    }
-    async.setImmediate = _setImmediate ? _delay : async.nextTick;
-
-
-    async.forEach =
-    async.each = function (arr, iterator, callback) {
-        return async.eachOf(arr, _withoutIndex(iterator), callback);
-    };
-
-    async.forEachSeries =
-    async.eachSeries = function (arr, iterator, callback) {
-        return async.eachOfSeries(arr, _withoutIndex(iterator), callback);
-    };
-
-
-    async.forEachLimit =
-    async.eachLimit = function (arr, limit, iterator, callback) {
-        return _eachOfLimit(limit)(arr, _withoutIndex(iterator), callback);
-    };
-
-    async.forEachOf =
-    async.eachOf = function (object, iterator, callback) {
-        callback = _once(callback || noop);
-        object = object || [];
-
-        var iter = _keyIterator(object);
-        var key, completed = 0;
-
-        while ((key = iter()) != null) {
-            completed += 1;
-            iterator(object[key], key, only_once(done));
-        }
-
-        if (completed === 0) callback(null);
-
-        function done(err) {
-            completed--;
-            if (err) {
-                callback(err);
-            }
-            // Check key is null in case iterator isn't exhausted
-            // and done resolved synchronously.
-            else if (key === null && completed <= 0) {
-                callback(null);
-            }
-        }
-    };
-
-    async.forEachOfSeries =
-    async.eachOfSeries = function (obj, iterator, callback) {
-        callback = _once(callback || noop);
-        obj = obj || [];
-        var nextKey = _keyIterator(obj);
-        var key = nextKey();
-        function iterate() {
-            var sync = true;
-            if (key === null) {
-                return callback(null);
-            }
-            iterator(obj[key], key, only_once(function (err) {
-                if (err) {
-                    callback(err);
-                }
-                else {
-                    key = nextKey();
-                    if (key === null) {
-                        return callback(null);
-                    } else {
-                        if (sync) {
-                            async.setImmediate(iterate);
-                        } else {
-                            iterate();
-                        }
-                    }
-                }
-            }));
-            sync = false;
-        }
-        iterate();
-    };
-
-
-
-    async.forEachOfLimit =
-    async.eachOfLimit = function (obj, limit, iterator, callback) {
-        _eachOfLimit(limit)(obj, iterator, callback);
-    };
-
-    function _eachOfLimit(limit) {
-
-        return function (obj, iterator, callback) {
-            callback = _once(callback || noop);
-            obj = obj || [];
-            var nextKey = _keyIterator(obj);
-            if (limit <= 0) {
-                return callback(null);
-            }
-            var done = false;
-            var running = 0;
-            var errored = false;
-
-            (function replenish () {
-                if (done && running <= 0) {
-                    return callback(null);
-                }
-
-                while (running < limit && !errored) {
-                    var key = nextKey();
-                    if (key === null) {
-                        done = true;
-                        if (running <= 0) {
-                            callback(null);
-                        }
-                        return;
-                    }
-                    running += 1;
-                    iterator(obj[key], key, only_once(function (err) {
-                        running -= 1;
-                        if (err) {
-                            callback(err);
-                            errored = true;
-                        }
-                        else {
-                            replenish();
-                        }
-                    }));
-                }
-            })();
-        };
-    }
-
-
-    function doParallel(fn) {
-        return function (obj, iterator, callback) {
-            return fn(async.eachOf, obj, iterator, callback);
-        };
-    }
-    function doParallelLimit(fn) {
-        return function (obj, limit, iterator, callback) {
-            return fn(_eachOfLimit(limit), obj, iterator, callback);
-        };
-    }
-    function doSeries(fn) {
-        return function (obj, iterator, callback) {
-            return fn(async.eachOfSeries, obj, iterator, callback);
-        };
-    }
-
-    function _asyncMap(eachfn, arr, iterator, callback) {
-        callback = _once(callback || noop);
-        arr = arr || [];
-        var results = _isArrayLike(arr) ? [] : {};
-        eachfn(arr, function (value, index, callback) {
-            iterator(value, function (err, v) {
-                results[index] = v;
-                callback(err);
-            });
-        }, function (err) {
-            callback(err, results);
-        });
-    }
-
-    async.map = doParallel(_asyncMap);
-    async.mapSeries = doSeries(_asyncMap);
-    async.mapLimit = doParallelLimit(_asyncMap);
-
-    // reduce only has a series version, as doing reduce in parallel won't
-    // work in many situations.
-    async.inject =
-    async.foldl =
-    async.reduce = function (arr, memo, iterator, callback) {
-        async.eachOfSeries(arr, function (x, i, callback) {
-            iterator(memo, x, function (err, v) {
-                memo = v;
-                callback(err);
-            });
-        }, function (err) {
-            callback(err, memo);
-        });
-    };
-
-    async.foldr =
-    async.reduceRight = function (arr, memo, iterator, callback) {
-        var reversed = _map(arr, identity).reverse();
-        async.reduce(reversed, memo, iterator, callback);
-    };
-
-    async.transform = function (arr, memo, iterator, callback) {
-        if (arguments.length === 3) {
-            callback = iterator;
-            iterator = memo;
-            memo = _isArray(arr) ? [] : {};
-        }
-
-        async.eachOf(arr, function(v, k, cb) {
-            iterator(memo, v, k, cb);
-        }, function(err) {
-            callback(err, memo);
-        });
-    };
-
-    function _filter(eachfn, arr, iterator, callback) {
-        var results = [];
-        eachfn(arr, function (x, index, callback) {
-            iterator(x, function (v) {
-                if (v) {
-                    results.push({index: index, value: x});
-                }
-                callback();
-            });
-        }, function () {
-            callback(_map(results.sort(function (a, b) {
-                return a.index - b.index;
-            }), function (x) {
-                return x.value;
-            }));
-        });
-    }
-
-    async.select =
-    async.filter = doParallel(_filter);
-
-    async.selectLimit =
-    async.filterLimit = doParallelLimit(_filter);
-
-    async.selectSeries =
-    async.filterSeries = doSeries(_filter);
-
-    function _reject(eachfn, arr, iterator, callback) {
-        _filter(eachfn, arr, function(value, cb) {
-            iterator(value, function(v) {
-                cb(!v);
-            });
-        }, callback);
-    }
-    async.reject = doParallel(_reject);
-    async.rejectLimit = doParallelLimit(_reject);
-    async.rejectSeries = doSeries(_reject);
-
-    function _createTester(eachfn, check, getResult) {
-        return function(arr, limit, iterator, cb) {
-            function done() {
-                if (cb) cb(getResult(false, void 0));
-            }
-            function iteratee(x, _, callback) {
-                if (!cb) return callback();
-                iterator(x, function (v) {
-                    if (cb && check(v)) {
-                        cb(getResult(true, x));
-                        cb = iterator = false;
-                    }
-                    callback();
-                });
-            }
-            if (arguments.length > 3) {
-                eachfn(arr, limit, iteratee, done);
-            } else {
-                cb = iterator;
-                iterator = limit;
-                eachfn(arr, iteratee, done);
-            }
-        };
-    }
-
-    async.any =
-    async.some = _createTester(async.eachOf, toBool, identity);
-
-    async.someLimit = _createTester(async.eachOfLimit, toBool, identity);
-
-    async.all =
-    async.every = _createTester(async.eachOf, notId, notId);
-
-    async.everyLimit = _createTester(async.eachOfLimit, notId, notId);
-
-    function _findGetResult(v, x) {
-        return x;
-    }
-    async.detect = _createTester(async.eachOf, identity, _findGetResult);
-    async.detectSeries = _createTester(async.eachOfSeries, identity, _findGetResult);
-    async.detectLimit = _createTester(async.eachOfLimit, identity, _findGetResult);
-
-    async.sortBy = function (arr, iterator, callback) {
-        async.map(arr, function (x, callback) {
-            iterator(x, function (err, criteria) {
-                if (err) {
-                    callback(err);
-                }
-                else {
-                    callback(null, {value: x, criteria: criteria});
-                }
-            });
-        }, function (err, results) {
-            if (err) {
-                return callback(err);
-            }
-            else {
-                callback(null, _map(results.sort(comparator), function (x) {
-                    return x.value;
-                }));
-            }
-
-        });
-
-        function comparator(left, right) {
-            var a = left.criteria, b = right.criteria;
-            return a < b ? -1 : a > b ? 1 : 0;
-        }
-    };
-
-    async.auto = function (tasks, concurrency, callback) {
-        if (typeof arguments[1] === 'function') {
-            // concurrency is optional, shift the args.
-            callback = concurrency;
-            concurrency = null;
-        }
-        callback = _once(callback || noop);
-        var keys = _keys(tasks);
-        var remainingTasks = keys.length;
-        if (!remainingTasks) {
-            return callback(null);
-        }
-        if (!concurrency) {
-            concurrency = remainingTasks;
-        }
-
-        var results = {};
-        var runningTasks = 0;
-
-        var hasError = false;
-
-        var listeners = [];
-        function addListener(fn) {
-            listeners.unshift(fn);
-        }
-        function removeListener(fn) {
-            var idx = _indexOf(listeners, fn);
-            if (idx >= 0) listeners.splice(idx, 1);
-        }
-        function taskComplete() {
-            remainingTasks--;
-            _arrayEach(listeners.slice(0), function (fn) {
-                fn();
-            });
-        }
-
-        addListener(function () {
-            if (!remainingTasks) {
-                callback(null, results);
-            }
-        });
-
-        _arrayEach(keys, function (k) {
-            if (hasError) return;
-            var task = _isArray(tasks[k]) ? tasks[k]: [tasks[k]];
-            var taskCallback = _restParam(function(err, args) {
-                runningTasks--;
-                if (args.length <= 1) {
-                    args = args[0];
-                }
-                if (err) {
-                    var safeResults = {};
-                    _forEachOf(results, function(val, rkey) {
-                        safeResults[rkey] = val;
-                    });
-                    safeResults[k] = args;
-                    hasError = true;
-
-                    callback(err, safeResults);
-                }
-                else {
-                    results[k] = args;
-                    async.setImmediate(taskComplete);
-                }
-            });
-            var requires = task.slice(0, task.length - 1);
-            // prevent dead-locks
-            var len = requires.length;
-            var dep;
-            while (len--) {
-                if (!(dep = tasks[requires[len]])) {
-                    throw new Error('Has nonexistent dependency in ' + requires.join(', '));
-                }
-                if (_isArray(dep) && _indexOf(dep, k) >= 0) {
-                    throw new Error('Has cyclic dependencies');
-                }
-            }
-            function ready() {
-                return runningTasks < concurrency && _reduce(requires, function (a, x) {
-                    return (a && results.hasOwnProperty(x));
-                }, true) && !results.hasOwnProperty(k);
-            }
-            if (ready()) {
-                runningTasks++;
-                task[task.length - 1](taskCallback, results);
-            }
-            else {
-                addListener(listener);
-            }
-            function listener() {
-                if (ready()) {
-                    runningTasks++;
-                    removeListener(listener);
-                    task[task.length - 1](taskCallback, results);
-                }
-            }
-        });
-    };
-
-
-
-    async.retry = function(times, task, callback) {
-        var DEFAULT_TIMES = 5;
-        var DEFAULT_INTERVAL = 0;
-
-        var attempts = [];
-
-        var opts = {
-            times: DEFAULT_TIMES,
-            interval: DEFAULT_INTERVAL
-        };
-
-        function parseTimes(acc, t){
-            if(typeof t === 'number'){
-                acc.times = parseInt(t, 10) || DEFAULT_TIMES;
-            } else if(typeof t === 'object'){
-                acc.times = parseInt(t.times, 10) || DEFAULT_TIMES;
-                acc.interval = parseInt(t.interval, 10) || DEFAULT_INTERVAL;
-            } else {
-                throw new Error('Unsupported argument type for \'times\': ' + typeof t);
-            }
-        }
-
-        var length = arguments.length;
-        if (length < 1 || length > 3) {
-            throw new Error('Invalid arguments - must be either (task), (task, callback), (times, task) or (times, task, callback)');
-        } else if (length <= 2 && typeof times === 'function') {
-            callback = task;
-            task = times;
-        }
-        if (typeof times !== 'function') {
-            parseTimes(opts, times);
-        }
-        opts.callback = callback;
-        opts.task = task;
-
-        function wrappedTask(wrappedCallback, wrappedResults) {
-            function retryAttempt(task, finalAttempt) {
-                return function(seriesCallback) {
-                    task(function(err, result){
-                        seriesCallback(!err || finalAttempt, {err: err, result: result});
-                    }, wrappedResults);
-                };
-            }
-
-            function retryInterval(interval){
-                return function(seriesCallback){
-                    setTimeout(function(){
-                        seriesCallback(null);
-                    }, interval);
-                };
-            }
-
-            while (opts.times) {
-
-                var finalAttempt = !(opts.times-=1);
-                attempts.push(retryAttempt(opts.task, finalAttempt));
-                if(!finalAttempt && opts.interval > 0){
-                    attempts.push(retryInterval(opts.interval));
-                }
-            }
-
-            async.series(attempts, function(done, data){
-                data = data[data.length - 1];
-                (wrappedCallback || opts.callback)(data.err, data.result);
-            });
-        }
-
-        // If a callback is passed, run this as a controll flow
-        return opts.callback ? wrappedTask() : wrappedTask;
-    };
-
-    async.waterfall = function (tasks, callback) {
-        callback = _once(callback || noop);
-        if (!_isArray(tasks)) {
-            var err = new Error('First argument to waterfall must be an array of functions');
-            return callback(err);
-        }
-        if (!tasks.length) {
-            return callback();
-        }
-        function wrapIterator(iterator) {
-            return _restParam(function (err, args) {
-                if (err) {
-                    callback.apply(null, [err].concat(args));
-                }
-                else {
-                    var next = iterator.next();
-                    if (next) {
-                        args.push(wrapIterator(next));
-                    }
-                    else {
-                        args.push(callback);
-                    }
-                    ensureAsync(iterator).apply(null, args);
-                }
-            });
-        }
-        wrapIterator(async.iterator(tasks))();
-    };
-
-    function _parallel(eachfn, tasks, callback) {
-        callback = callback || noop;
-        var results = _isArrayLike(tasks) ? [] : {};
-
-        eachfn(tasks, function (task, key, callback) {
-            task(_restParam(function (err, args) {
-                if (args.length <= 1) {
-                    args = args[0];
-                }
-                results[key] = args;
-                callback(err);
-            }));
-        }, function (err) {
-            callback(err, results);
-        });
-    }
-
-    async.parallel = function (tasks, callback) {
-        _parallel(async.eachOf, tasks, callback);
-    };
-
-    async.parallelLimit = function(tasks, limit, callback) {
-        _parallel(_eachOfLimit(limit), tasks, callback);
-    };
-
-    async.series = function(tasks, callback) {
-        _parallel(async.eachOfSeries, tasks, callback);
-    };
-
-    async.iterator = function (tasks) {
-        function makeCallback(index) {
-            function fn() {
-                if (tasks.length) {
-                    tasks[index].apply(null, arguments);
-                }
-                return fn.next();
-            }
-            fn.next = function () {
-                return (index < tasks.length - 1) ? makeCallback(index + 1): null;
-            };
-            return fn;
-        }
-        return makeCallback(0);
-    };
-
-    async.apply = _restParam(function (fn, args) {
-        return _restParam(function (callArgs) {
-            return fn.apply(
-                null, args.concat(callArgs)
-            );
-        });
-    });
-
-    function _concat(eachfn, arr, fn, callback) {
-        var result = [];
-        eachfn(arr, function (x, index, cb) {
-            fn(x, function (err, y) {
-                result = result.concat(y || []);
-                cb(err);
-            });
-        }, function (err) {
-            callback(err, result);
-        });
-    }
-    async.concat = doParallel(_concat);
-    async.concatSeries = doSeries(_concat);
-
-    async.whilst = function (test, iterator, callback) {
-        callback = callback || noop;
-        if (test()) {
-            var next = _restParam(function(err, args) {
-                if (err) {
-                    callback(err);
-                } else if (test.apply(this, args)) {
-                    iterator(next);
-                } else {
-                    callback.apply(null, [null].concat(args));
-                }
-            });
-            iterator(next);
-        } else {
-            callback(null);
-        }
-    };
-
-    async.doWhilst = function (iterator, test, callback) {
-        var calls = 0;
-        return async.whilst(function() {
-            return ++calls <= 1 || test.apply(this, arguments);
-        }, iterator, callback);
-    };
-
-    async.until = function (test, iterator, callback) {
-        return async.whilst(function() {
-            return !test.apply(this, arguments);
-        }, iterator, callback);
-    };
-
-    async.doUntil = function (iterator, test, callback) {
-        return async.doWhilst(iterator, function() {
-            return !test.apply(this, arguments);
-        }, callback);
-    };
-
-    async.during = function (test, iterator, callback) {
-        callback = callback || noop;
-
-        var next = _restParam(function(err, args) {
-            if (err) {
-                callback(err);
-            } else {
-                args.push(check);
-                test.apply(this, args);
-            }
-        });
-
-        var check = function(err, truth) {
-            if (err) {
-                callback(err);
-            } else if (truth) {
-                iterator(next);
-            } else {
-                callback(null);
-            }
-        };
-
-        test(check);
-    };
-
-    async.doDuring = function (iterator, test, callback) {
-        var calls = 0;
-        async.during(function(next) {
-            if (calls++ < 1) {
-                next(null, true);
-            } else {
-                test.apply(this, arguments);
-            }
-        }, iterator, callback);
-    };
-
-    function _queue(worker, concurrency, payload) {
-        if (concurrency == null) {
-            concurrency = 1;
-        }
-        else if(concurrency === 0) {
-            throw new Error('Concurrency must not be zero');
-        }
-        function _insert(q, data, pos, callback) {
-            if (callback != null && typeof callback !== "function") {
-                throw new Error("task callback must be a function");
-            }
-            q.started = true;
-            if (!_isArray(data)) {
-                data = [data];
-            }
-            if(data.length === 0 && q.idle()) {
-                // call drain immediately if there are no tasks
-                return async.setImmediate(function() {
-                    q.drain();
-                });
-            }
-            _arrayEach(data, function(task) {
-                var item = {
-                    data: task,
-                    callback: callback || noop
-                };
-
-                if (pos) {
-                    q.tasks.unshift(item);
-                } else {
-                    q.tasks.push(item);
-                }
-
-                if (q.tasks.length === q.concurrency) {
-                    q.saturated();
-                }
-            });
-            async.setImmediate(q.process);
-        }
-        function _next(q, tasks) {
-            return function(){
-                workers -= 1;
-
-                var removed = false;
-                var args = arguments;
-                _arrayEach(tasks, function (task) {
-                    _arrayEach(workersList, function (worker, index) {
-                        if (worker === task && !removed) {
-                            workersList.splice(index, 1);
-                            removed = true;
-                        }
-                    });
-
-                    task.callback.apply(task, args);
-                });
-                if (q.tasks.length + workers === 0) {
-                    q.drain();
-                }
-                q.process();
-            };
-        }
-
-        var workers = 0;
-        var workersList = [];
-        var q = {
-            tasks: [],
-            concurrency: concurrency,
-            payload: payload,
-            saturated: noop,
-            empty: noop,
-            drain: noop,
-            started: false,
-            paused: false,
-            push: function (data, callback) {
-                _insert(q, data, false, callback);
-            },
-            kill: function () {
-                q.drain = noop;
-                q.tasks = [];
-            },
-            unshift: function (data, callback) {
-                _insert(q, data, true, callback);
-            },
-            process: function () {
-                while(!q.paused && workers < q.concurrency && q.tasks.length){
-
-                    var tasks = q.payload ?
-                        q.tasks.splice(0, q.payload) :
-                        q.tasks.splice(0, q.tasks.length);
-
-                    var data = _map(tasks, function (task) {
-                        return task.data;
-                    });
-
-                    if (q.tasks.length === 0) {
-                        q.empty();
-                    }
-                    workers += 1;
-                    workersList.push(tasks[0]);
-                    var cb = only_once(_next(q, tasks));
-                    worker(data, cb);
-                }
-            },
-            length: function () {
-                return q.tasks.length;
-            },
-            running: function () {
-                return workers;
-            },
-            workersList: function () {
-                return workersList;
-            },
-            idle: function() {
-                return q.tasks.length + workers === 0;
-            },
-            pause: function () {
-                q.paused = true;
-            },
-            resume: function () {
-                if (q.paused === false) { return; }
-                q.paused = false;
-                var resumeCount = Math.min(q.concurrency, q.tasks.length);
-                // Need to call q.process once per concurrent
-                // worker to preserve full concurrency after pause
-                for (var w = 1; w <= resumeCount; w++) {
-                    async.setImmediate(q.process);
-                }
-            }
-        };
-        return q;
-    }
-
-    async.queue = function (worker, concurrency) {
-        var q = _queue(function (items, cb) {
-            worker(items[0], cb);
-        }, concurrency, 1);
-
-        return q;
-    };
-
-    async.priorityQueue = function (worker, concurrency) {
-
-        function _compareTasks(a, b){
-            return a.priority - b.priority;
-        }
-
-        function _binarySearch(sequence, item, compare) {
-            var beg = -1,
-                end = sequence.length - 1;
-            while (beg < end) {
-                var mid = beg + ((end - beg + 1) >>> 1);
-                if (compare(item, sequence[mid]) >= 0) {
-                    beg = mid;
-                } else {
-                    end = mid - 1;
-                }
-            }
-            return beg;
-        }
-
-        function _insert(q, data, priority, callback) {
-            if (callback != null && typeof callback !== "function") {
-                throw new Error("task callback must be a function");
-            }
-            q.started = true;
-            if (!_isArray(data)) {
-                data = [data];
-            }
-            if(data.length === 0) {
-                // call drain immediately if there are no tasks
-                return async.setImmediate(function() {
-                    q.drain();
-                });
-            }
-            _arrayEach(data, function(task) {
-                var item = {
-                    data: task,
-                    priority: priority,
-                    callback: typeof callback === 'function' ? callback : noop
-                };
-
-                q.tasks.splice(_binarySearch(q.tasks, item, _compareTasks) + 1, 0, item);
-
-                if (q.tasks.length === q.concurrency) {
-                    q.saturated();
-                }
-                async.setImmediate(q.process);
-            });
-        }
-
-        // Start with a normal queue
-        var q = async.queue(worker, concurrency);
-
-        // Override push to accept second parameter representing priority
-        q.push = function (data, priority, callback) {
-            _insert(q, data, priority, callback);
-        };
-
-        // Remove unshift function
-        delete q.unshift;
-
-        return q;
-    };
-
-    async.cargo = function (worker, payload) {
-        return _queue(worker, 1, payload);
-    };
-
-    function _console_fn(name) {
-        return _restParam(function (fn, args) {
-            fn.apply(null, args.concat([_restParam(function (err, args) {
-                if (typeof console === 'object') {
-                    if (err) {
-                        if (console.error) {
-                            console.error(err);
-                        }
-                    }
-                    else if (console[name]) {
-                        _arrayEach(args, function (x) {
-                            console[name](x);
-                        });
-                    }
-                }
-            })]));
-        });
-    }
-    async.log = _console_fn('log');
-    async.dir = _console_fn('dir');
-    /*async.info = _console_fn('info');
-    async.warn = _console_fn('warn');
-    async.error = _console_fn('error');*/
-
-    async.memoize = function (fn, hasher) {
-        var memo = {};
-        var queues = {};
-        var has = Object.prototype.hasOwnProperty;
-        hasher = hasher || identity;
-        var memoized = _restParam(function memoized(args) {
-            var callback = args.pop();
-            var key = hasher.apply(null, args);
-            if (has.call(memo, key)) {   
-                async.setImmediate(function () {
-                    callback.apply(null, memo[key]);
-                });
-            }
-            else if (has.call(queues, key)) {
-                queues[key].push(callback);
-            }
-            else {
-                queues[key] = [callback];
-                fn.apply(null, args.concat([_restParam(function (args) {
-                    memo[key] = args;
-                    var q = queues[key];
-                    delete queues[key];
-                    for (var i = 0, l = q.length; i < l; i++) {
-                        q[i].apply(null, args);
-                    }
-                })]));
-            }
-        });
-        memoized.memo = memo;
-        memoized.unmemoized = fn;
-        return memoized;
-    };
-
-    async.unmemoize = function (fn) {
-        return function () {
-            return (fn.unmemoized || fn).apply(null, arguments);
-        };
-    };
-
-    function _times(mapper) {
-        return function (count, iterator, callback) {
-            mapper(_range(count), iterator, callback);
-        };
-    }
-
-    async.times = _times(async.map);
-    async.timesSeries = _times(async.mapSeries);
-    async.timesLimit = function (count, limit, iterator, callback) {
-        return async.mapLimit(_range(count), limit, iterator, callback);
-    };
-
-    async.seq = function (/* functions... */) {
-        var fns = arguments;
-        return _restParam(function (args) {
-            var that = this;
-
-            var callback = args[args.length - 1];
-            if (typeof callback == 'function') {
-                args.pop();
-            } else {
-                callback = noop;
-            }
-
-            async.reduce(fns, args, function (newargs, fn, cb) {
-                fn.apply(that, newargs.concat([_restParam(function (err, nextargs) {
-                    cb(err, nextargs);
-                })]));
-            },
-            function (err, results) {
-                callback.apply(that, [err].concat(results));
-            });
-        });
-    };
-
-    async.compose = function (/* functions... */) {
-        return async.seq.apply(null, Array.prototype.reverse.call(arguments));
-    };
-
-
-    function _applyEach(eachfn) {
-        return _restParam(function(fns, args) {
-            var go = _restParam(function(args) {
-                var that = this;
-                var callback = args.pop();
-                return eachfn(fns, function (fn, _, cb) {
-                    fn.apply(that, args.concat([cb]));
-                },
-                callback);
-            });
-            if (args.length) {
-                return go.apply(this, args);
-            }
-            else {
-                return go;
-            }
-        });
-    }
-
-    async.applyEach = _applyEach(async.eachOf);
-    async.applyEachSeries = _applyEach(async.eachOfSeries);
-
-
-    async.forever = function (fn, callback) {
-        var done = only_once(callback || noop);
-        var task = ensureAsync(fn);
-        function next(err) {
-            if (err) {
-                return done(err);
-            }
-            task(next);
-        }
-        next();
-    };
-
-    function ensureAsync(fn) {
-        return _restParam(function (args) {
-            var callback = args.pop();
-            args.push(function () {
-                var innerArgs = arguments;
-                if (sync) {
-                    async.setImmediate(function () {
-                        callback.apply(null, innerArgs);
-                    });
-                } else {
-                    callback.apply(null, innerArgs);
-                }
-            });
-            var sync = true;
-            fn.apply(this, args);
-            sync = false;
-        });
-    }
-
-    async.ensureAsync = ensureAsync;
-
-    async.constant = _restParam(function(values) {
-        var args = [null].concat(values);
-        return function (callback) {
-            return callback.apply(this, args);
-        };
-    });
-
-    async.wrapSync =
-    async.asyncify = function asyncify(func) {
-        return _restParam(function (args) {
-            var callback = args.pop();
-            var result;
-            try {
-                result = func.apply(this, args);
-            } catch (e) {
-                return callback(e);
-            }
-            // if result is Promise object
-            if (_isObject(result) && typeof result.then === "function") {
-                result.then(function(value) {
-                    callback(null, value);
-                })["catch"](function(err) {
-                    callback(err.message ? err : new Error(err));
-                });
-            } else {
-                callback(null, result);
-            }
-        });
-    };
-
-    // Node.js
-    if ( true && module.exports) {
-        module.exports = async;
-    }
-    // AMD / RequireJS
-    else if (typeof define === 'function' && define.amd) {
-        define([], function () {
-            return async;
-        });
-    }
-    // included directly via <script> tag
-    else {
-        root.async = async;
-    }
-
-}());
-
-
-/***/ }),
-
 /***/ 3108:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
@@ -6914,6 +5642,120 @@ function removeHook(state, name, method) {
   }
 
   state.registry[name].splice(index, 1);
+}
+
+
+/***/ }),
+
+/***/ 8610:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+// Copyright Joyent, Inc. and other Node contributors.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the
+// "Software"), to deal in the Software without restriction, including
+// without limitation the rights to use, copy, modify, merge, publish,
+// distribute, sublicense, and/or sell copies of the Software, and to permit
+// persons to whom the Software is furnished to do so, subject to the
+// following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+// USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+// NOTE: These type checking functions intentionally don't use `instanceof`
+// because it is fragile and can be easily faked with `Object.create()`.
+
+function isArray(arg) {
+  if (Array.isArray) {
+    return Array.isArray(arg);
+  }
+  return objectToString(arg) === '[object Array]';
+}
+exports.isArray = isArray;
+
+function isBoolean(arg) {
+  return typeof arg === 'boolean';
+}
+exports.isBoolean = isBoolean;
+
+function isNull(arg) {
+  return arg === null;
+}
+exports.isNull = isNull;
+
+function isNullOrUndefined(arg) {
+  return arg == null;
+}
+exports.isNullOrUndefined = isNullOrUndefined;
+
+function isNumber(arg) {
+  return typeof arg === 'number';
+}
+exports.isNumber = isNumber;
+
+function isString(arg) {
+  return typeof arg === 'string';
+}
+exports.isString = isString;
+
+function isSymbol(arg) {
+  return typeof arg === 'symbol';
+}
+exports.isSymbol = isSymbol;
+
+function isUndefined(arg) {
+  return arg === void 0;
+}
+exports.isUndefined = isUndefined;
+
+function isRegExp(re) {
+  return objectToString(re) === '[object RegExp]';
+}
+exports.isRegExp = isRegExp;
+
+function isObject(arg) {
+  return typeof arg === 'object' && arg !== null;
+}
+exports.isObject = isObject;
+
+function isDate(d) {
+  return objectToString(d) === '[object Date]';
+}
+exports.isDate = isDate;
+
+function isError(e) {
+  return (objectToString(e) === '[object Error]' || e instanceof Error);
+}
+exports.isError = isError;
+
+function isFunction(arg) {
+  return typeof arg === 'function';
+}
+exports.isFunction = isFunction;
+
+function isPrimitive(arg) {
+  return arg === null ||
+         typeof arg === 'boolean' ||
+         typeof arg === 'number' ||
+         typeof arg === 'string' ||
+         typeof arg === 'symbol' ||  // ES6 symbol
+         typeof arg === 'undefined';
+}
+exports.isPrimitive = isPrimitive;
+
+exports.isBuffer = __nccwpck_require__(4300).Buffer.isBuffer;
+
+function objectToString(o) {
+  return Object.prototype.toString.call(o);
 }
 
 
@@ -11153,946 +9995,130 @@ exports.Deprecation = Deprecation;
 
 /***/ }),
 
-/***/ 7171:
+/***/ 2335:
 /***/ ((module) => {
 
 
-
-module.exports = clone
-
-var getPrototypeOf = Object.getPrototypeOf || function (obj) {
-  return obj.__proto__
-}
-
-function clone (obj) {
-  if (obj === null || typeof obj !== 'object')
-    return obj
-
-  if (obj instanceof Object)
-    var copy = { __proto__: getPrototypeOf(obj) }
-  else
-    var copy = Object.create(null)
-
-  Object.getOwnPropertyNames(obj).forEach(function (key) {
-    Object.defineProperty(copy, key, Object.getOwnPropertyDescriptor(obj, key))
-  })
-
-  return copy
-}
-
-
-/***/ }),
-
-/***/ 9303:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
-
-var fs = __nccwpck_require__(7147)
-var polyfills = __nccwpck_require__(307)
-var legacy = __nccwpck_require__(2492)
-var clone = __nccwpck_require__(7171)
-
-var util = __nccwpck_require__(3837)
-
-/* istanbul ignore next - node 0.x polyfill */
-var gracefulQueue
-var previousSymbol
-
-/* istanbul ignore else - node 0.x polyfill */
-if (typeof Symbol === 'function' && typeof Symbol.for === 'function') {
-  gracefulQueue = Symbol.for('graceful-fs.queue')
-  // This is used in testing by future versions
-  previousSymbol = Symbol.for('graceful-fs.previous')
-} else {
-  gracefulQueue = '___graceful-fs.queue'
-  previousSymbol = '___graceful-fs.previous'
-}
-
-function noop () {}
-
-function publishQueue(context, queue) {
-  Object.defineProperty(context, gracefulQueue, {
-    get: function() {
-      return queue
-    }
-  })
-}
-
-var debug = noop
-if (util.debuglog)
-  debug = util.debuglog('gfs4')
-else if (/\bgfs4\b/i.test(process.env.NODE_DEBUG || ''))
-  debug = function() {
-    var m = util.format.apply(util, arguments)
-    m = 'GFS4: ' + m.split(/\n/).join('\nGFS4: ')
-    console.error(m)
-  }
-
-// Once time initialization
-if (!fs[gracefulQueue]) {
-  // This queue can be shared by multiple loaded instances
-  var queue = global[gracefulQueue] || []
-  publishQueue(fs, queue)
-
-  // Patch fs.close/closeSync to shared queue version, because we need
-  // to retry() whenever a close happens *anywhere* in the program.
-  // This is essential when multiple graceful-fs instances are
-  // in play at the same time.
-  fs.close = (function (fs$close) {
-    function close (fd, cb) {
-      return fs$close.call(fs, fd, function (err) {
-        // This function uses the graceful-fs shared queue
-        if (!err) {
-          resetQueue()
-        }
-
-        if (typeof cb === 'function')
-          cb.apply(this, arguments)
-      })
-    }
-
-    Object.defineProperty(close, previousSymbol, {
-      value: fs$close
-    })
-    return close
-  })(fs.close)
-
-  fs.closeSync = (function (fs$closeSync) {
-    function closeSync (fd) {
-      // This function uses the graceful-fs shared queue
-      fs$closeSync.apply(fs, arguments)
-      resetQueue()
-    }
-
-    Object.defineProperty(closeSync, previousSymbol, {
-      value: fs$closeSync
-    })
-    return closeSync
-  })(fs.closeSync)
-
-  if (/\bgfs4\b/i.test(process.env.NODE_DEBUG || '')) {
-    process.on('exit', function() {
-      debug(fs[gracefulQueue])
-      __nccwpck_require__(9491).equal(fs[gracefulQueue].length, 0)
-    })
-  }
-}
-
-if (!global[gracefulQueue]) {
-  publishQueue(global, fs[gracefulQueue]);
-}
-
-module.exports = patch(clone(fs))
-if (process.env.TEST_GRACEFUL_FS_GLOBAL_PATCH && !fs.__patched) {
-    module.exports = patch(fs)
-    fs.__patched = true;
-}
-
-function patch (fs) {
-  // Everything that references the open() function needs to be in here
-  polyfills(fs)
-  fs.gracefulify = patch
-
-  fs.createReadStream = createReadStream
-  fs.createWriteStream = createWriteStream
-  var fs$readFile = fs.readFile
-  fs.readFile = readFile
-  function readFile (path, options, cb) {
-    if (typeof options === 'function')
-      cb = options, options = null
-
-    return go$readFile(path, options, cb)
-
-    function go$readFile (path, options, cb, startTime) {
-      return fs$readFile(path, options, function (err) {
-        if (err && (err.code === 'EMFILE' || err.code === 'ENFILE'))
-          enqueue([go$readFile, [path, options, cb], err, startTime || Date.now(), Date.now()])
-        else {
-          if (typeof cb === 'function')
-            cb.apply(this, arguments)
-        }
-      })
-    }
-  }
-
-  var fs$writeFile = fs.writeFile
-  fs.writeFile = writeFile
-  function writeFile (path, data, options, cb) {
-    if (typeof options === 'function')
-      cb = options, options = null
-
-    return go$writeFile(path, data, options, cb)
-
-    function go$writeFile (path, data, options, cb, startTime) {
-      return fs$writeFile(path, data, options, function (err) {
-        if (err && (err.code === 'EMFILE' || err.code === 'ENFILE'))
-          enqueue([go$writeFile, [path, data, options, cb], err, startTime || Date.now(), Date.now()])
-        else {
-          if (typeof cb === 'function')
-            cb.apply(this, arguments)
-        }
-      })
-    }
-  }
-
-  var fs$appendFile = fs.appendFile
-  if (fs$appendFile)
-    fs.appendFile = appendFile
-  function appendFile (path, data, options, cb) {
-    if (typeof options === 'function')
-      cb = options, options = null
-
-    return go$appendFile(path, data, options, cb)
-
-    function go$appendFile (path, data, options, cb, startTime) {
-      return fs$appendFile(path, data, options, function (err) {
-        if (err && (err.code === 'EMFILE' || err.code === 'ENFILE'))
-          enqueue([go$appendFile, [path, data, options, cb], err, startTime || Date.now(), Date.now()])
-        else {
-          if (typeof cb === 'function')
-            cb.apply(this, arguments)
-        }
-      })
-    }
-  }
-
-  var fs$copyFile = fs.copyFile
-  if (fs$copyFile)
-    fs.copyFile = copyFile
-  function copyFile (src, dest, flags, cb) {
-    if (typeof flags === 'function') {
-      cb = flags
-      flags = 0
-    }
-    return go$copyFile(src, dest, flags, cb)
-
-    function go$copyFile (src, dest, flags, cb, startTime) {
-      return fs$copyFile(src, dest, flags, function (err) {
-        if (err && (err.code === 'EMFILE' || err.code === 'ENFILE'))
-          enqueue([go$copyFile, [src, dest, flags, cb], err, startTime || Date.now(), Date.now()])
-        else {
-          if (typeof cb === 'function')
-            cb.apply(this, arguments)
-        }
-      })
-    }
-  }
-
-  var fs$readdir = fs.readdir
-  fs.readdir = readdir
-  function readdir (path, options, cb) {
-    if (typeof options === 'function')
-      cb = options, options = null
-
-    return go$readdir(path, options, cb)
-
-    function go$readdir (path, options, cb, startTime) {
-      return fs$readdir(path, options, function (err, files) {
-        if (err && (err.code === 'EMFILE' || err.code === 'ENFILE'))
-          enqueue([go$readdir, [path, options, cb], err, startTime || Date.now(), Date.now()])
-        else {
-          if (files && files.sort)
-            files.sort()
-
-          if (typeof cb === 'function')
-            cb.call(this, err, files)
-        }
-      })
-    }
-  }
-
-  if (process.version.substr(0, 4) === 'v0.8') {
-    var legStreams = legacy(fs)
-    ReadStream = legStreams.ReadStream
-    WriteStream = legStreams.WriteStream
-  }
-
-  var fs$ReadStream = fs.ReadStream
-  if (fs$ReadStream) {
-    ReadStream.prototype = Object.create(fs$ReadStream.prototype)
-    ReadStream.prototype.open = ReadStream$open
-  }
-
-  var fs$WriteStream = fs.WriteStream
-  if (fs$WriteStream) {
-    WriteStream.prototype = Object.create(fs$WriteStream.prototype)
-    WriteStream.prototype.open = WriteStream$open
-  }
-
-  Object.defineProperty(fs, 'ReadStream', {
-    get: function () {
-      return ReadStream
-    },
-    set: function (val) {
-      ReadStream = val
-    },
-    enumerable: true,
-    configurable: true
-  })
-  Object.defineProperty(fs, 'WriteStream', {
-    get: function () {
-      return WriteStream
-    },
-    set: function (val) {
-      WriteStream = val
-    },
-    enumerable: true,
-    configurable: true
-  })
-
-  // legacy names
-  var FileReadStream = ReadStream
-  Object.defineProperty(fs, 'FileReadStream', {
-    get: function () {
-      return FileReadStream
-    },
-    set: function (val) {
-      FileReadStream = val
-    },
-    enumerable: true,
-    configurable: true
-  })
-  var FileWriteStream = WriteStream
-  Object.defineProperty(fs, 'FileWriteStream', {
-    get: function () {
-      return FileWriteStream
-    },
-    set: function (val) {
-      FileWriteStream = val
-    },
-    enumerable: true,
-    configurable: true
-  })
-
-  function ReadStream (path, options) {
-    if (this instanceof ReadStream)
-      return fs$ReadStream.apply(this, arguments), this
-    else
-      return ReadStream.apply(Object.create(ReadStream.prototype), arguments)
-  }
-
-  function ReadStream$open () {
-    var that = this
-    open(that.path, that.flags, that.mode, function (err, fd) {
-      if (err) {
-        if (that.autoClose)
-          that.destroy()
-
-        that.emit('error', err)
-      } else {
-        that.fd = fd
-        that.emit('open', fd)
-        that.read()
-      }
-    })
-  }
-
-  function WriteStream (path, options) {
-    if (this instanceof WriteStream)
-      return fs$WriteStream.apply(this, arguments), this
-    else
-      return WriteStream.apply(Object.create(WriteStream.prototype), arguments)
-  }
-
-  function WriteStream$open () {
-    var that = this
-    open(that.path, that.flags, that.mode, function (err, fd) {
-      if (err) {
-        that.destroy()
-        that.emit('error', err)
-      } else {
-        that.fd = fd
-        that.emit('open', fd)
-      }
-    })
-  }
-
-  function createReadStream (path, options) {
-    return new fs.ReadStream(path, options)
-  }
-
-  function createWriteStream (path, options) {
-    return new fs.WriteStream(path, options)
-  }
-
-  var fs$open = fs.open
-  fs.open = open
-  function open (path, flags, mode, cb) {
-    if (typeof mode === 'function')
-      cb = mode, mode = null
-
-    return go$open(path, flags, mode, cb)
-
-    function go$open (path, flags, mode, cb, startTime) {
-      return fs$open(path, flags, mode, function (err, fd) {
-        if (err && (err.code === 'EMFILE' || err.code === 'ENFILE'))
-          enqueue([go$open, [path, flags, mode, cb], err, startTime || Date.now(), Date.now()])
-        else {
-          if (typeof cb === 'function')
-            cb.apply(this, arguments)
-        }
-      })
-    }
-  }
-
-  return fs
-}
-
-function enqueue (elem) {
-  debug('ENQUEUE', elem[0].name, elem[1])
-  fs[gracefulQueue].push(elem)
-  retry()
-}
-
-// keep track of the timeout between retry() calls
-var retryTimer
-
-// reset the startTime and lastTime to now
-// this resets the start of the 60 second overall timeout as well as the
-// delay between attempts so that we'll retry these jobs sooner
-function resetQueue () {
-  var now = Date.now()
-  for (var i = 0; i < fs[gracefulQueue].length; ++i) {
-    // entries that are only a length of 2 are from an older version, don't
-    // bother modifying those since they'll be retried anyway.
-    if (fs[gracefulQueue][i].length > 2) {
-      fs[gracefulQueue][i][3] = now // startTime
-      fs[gracefulQueue][i][4] = now // lastTime
-    }
-  }
-  // call retry to make sure we're actively processing the queue
-  retry()
-}
-
-function retry () {
-  // clear the timer and remove it to help prevent unintended concurrency
-  clearTimeout(retryTimer)
-  retryTimer = undefined
-
-  if (fs[gracefulQueue].length === 0)
-    return
-
-  var elem = fs[gracefulQueue].shift()
-  var fn = elem[0]
-  var args = elem[1]
-  // these items may be unset if they were added by an older graceful-fs
-  var err = elem[2]
-  var startTime = elem[3]
-  var lastTime = elem[4]
-
-  // if we don't have a startTime we have no way of knowing if we've waited
-  // long enough, so go ahead and retry this item now
-  if (startTime === undefined) {
-    debug('RETRY', fn.name, args)
-    fn.apply(null, args)
-  } else if (Date.now() - startTime >= 60000) {
-    // it's been more than 60 seconds total, bail now
-    debug('TIMEOUT', fn.name, args)
-    var cb = args.pop()
-    if (typeof cb === 'function')
-      cb.call(null, err)
+var Mutation = global.MutationObserver || global.WebKitMutationObserver;
+
+var scheduleDrain;
+
+if (process.browser) {
+  if (Mutation) {
+    var called = 0;
+    var observer = new Mutation(nextTick);
+    var element = global.document.createTextNode('');
+    observer.observe(element, {
+      characterData: true
+    });
+    scheduleDrain = function () {
+      element.data = (called = ++called % 2);
+    };
+  } else if (!global.setImmediate && typeof global.MessageChannel !== 'undefined') {
+    var channel = new global.MessageChannel();
+    channel.port1.onmessage = nextTick;
+    scheduleDrain = function () {
+      channel.port2.postMessage(0);
+    };
+  } else if ('document' in global && 'onreadystatechange' in global.document.createElement('script')) {
+    scheduleDrain = function () {
+
+      // Create a <script> element; its readystatechange event will be fired asynchronously once it is inserted
+      // into the document. Do so, thus queuing up the task. Remember to clean up once it's been called.
+      var scriptEl = global.document.createElement('script');
+      scriptEl.onreadystatechange = function () {
+        nextTick();
+
+        scriptEl.onreadystatechange = null;
+        scriptEl.parentNode.removeChild(scriptEl);
+        scriptEl = null;
+      };
+      global.document.documentElement.appendChild(scriptEl);
+    };
   } else {
-    // the amount of time between the last attempt and right now
-    var sinceAttempt = Date.now() - lastTime
-    // the amount of time between when we first tried, and when we last tried
-    // rounded up to at least 1
-    var sinceStart = Math.max(lastTime - startTime, 1)
-    // backoff. wait longer than the total time we've been retrying, but only
-    // up to a maximum of 100ms
-    var desiredDelay = Math.min(sinceStart * 1.2, 100)
-    // it's been long enough since the last retry, do it again
-    if (sinceAttempt >= desiredDelay) {
-      debug('RETRY', fn.name, args)
-      fn.apply(null, args.concat([startTime]))
-    } else {
-      // if we can't do this job yet, push it to the end of the queue
-      // and let the next iteration check again
-      fs[gracefulQueue].push(elem)
-    }
+    scheduleDrain = function () {
+      setTimeout(nextTick, 0);
+    };
   }
+} else {
+  scheduleDrain = function () {
+    process.nextTick(nextTick);
+  };
+}
 
-  // schedule our next run if one isn't already scheduled
-  if (retryTimer === undefined) {
-    retryTimer = setTimeout(retry, 0)
+var draining;
+var queue = [];
+//named nextTick for less confusing stack traces
+function nextTick() {
+  draining = true;
+  var i, oldQueue;
+  var len = queue.length;
+  while (len) {
+    oldQueue = queue;
+    queue = [];
+    i = -1;
+    while (++i < len) {
+      oldQueue[i]();
+    }
+    len = queue.length;
+  }
+  draining = false;
+}
+
+module.exports = immediate;
+function immediate(task) {
+  if (queue.push(task) === 1 && !draining) {
+    scheduleDrain();
   }
 }
 
 
 /***/ }),
 
-/***/ 2492:
+/***/ 2150:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
-var Stream = (__nccwpck_require__(2781).Stream)
-
-module.exports = legacy
-
-function legacy (fs) {
-  return {
-    ReadStream: ReadStream,
-    WriteStream: WriteStream
-  }
-
-  function ReadStream (path, options) {
-    if (!(this instanceof ReadStream)) return new ReadStream(path, options);
-
-    Stream.call(this);
-
-    var self = this;
-
-    this.path = path;
-    this.fd = null;
-    this.readable = true;
-    this.paused = false;
-
-    this.flags = 'r';
-    this.mode = 438; /*=0666*/
-    this.bufferSize = 64 * 1024;
-
-    options = options || {};
-
-    // Mixin options into this
-    var keys = Object.keys(options);
-    for (var index = 0, length = keys.length; index < length; index++) {
-      var key = keys[index];
-      this[key] = options[key];
-    }
-
-    if (this.encoding) this.setEncoding(this.encoding);
-
-    if (this.start !== undefined) {
-      if ('number' !== typeof this.start) {
-        throw TypeError('start must be a Number');
-      }
-      if (this.end === undefined) {
-        this.end = Infinity;
-      } else if ('number' !== typeof this.end) {
-        throw TypeError('end must be a Number');
-      }
-
-      if (this.start > this.end) {
-        throw new Error('start must be <= end');
-      }
-
-      this.pos = this.start;
-    }
-
-    if (this.fd !== null) {
-      process.nextTick(function() {
-        self._read();
-      });
-      return;
-    }
-
-    fs.open(this.path, this.flags, this.mode, function (err, fd) {
-      if (err) {
-        self.emit('error', err);
-        self.readable = false;
-        return;
-      }
-
-      self.fd = fd;
-      self.emit('open', fd);
-      self._read();
-    })
-  }
-
-  function WriteStream (path, options) {
-    if (!(this instanceof WriteStream)) return new WriteStream(path, options);
-
-    Stream.call(this);
-
-    this.path = path;
-    this.fd = null;
-    this.writable = true;
-
-    this.flags = 'w';
-    this.encoding = 'binary';
-    this.mode = 438; /*=0666*/
-    this.bytesWritten = 0;
-
-    options = options || {};
-
-    // Mixin options into this
-    var keys = Object.keys(options);
-    for (var index = 0, length = keys.length; index < length; index++) {
-      var key = keys[index];
-      this[key] = options[key];
-    }
-
-    if (this.start !== undefined) {
-      if ('number' !== typeof this.start) {
-        throw TypeError('start must be a Number');
-      }
-      if (this.start < 0) {
-        throw new Error('start must be >= zero');
-      }
-
-      this.pos = this.start;
-    }
-
-    this.busy = false;
-    this._queue = [];
-
-    if (this.fd === null) {
-      this._open = fs.open;
-      this._queue.push([this._open, this.path, this.flags, this.mode, undefined]);
-      this.flush();
-    }
-  }
-}
-
-
-/***/ }),
-
-/***/ 307:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
-
-var constants = __nccwpck_require__(2057)
-
-var origCwd = process.cwd
-var cwd = null
-
-var platform = process.env.GRACEFUL_FS_PLATFORM || process.platform
-
-process.cwd = function() {
-  if (!cwd)
-    cwd = origCwd.call(process)
-  return cwd
-}
 try {
-  process.cwd()
-} catch (er) {}
-
-// This check is needed until node.js 12 is required
-if (typeof process.chdir === 'function') {
-  var chdir = process.chdir
-  process.chdir = function (d) {
-    cwd = null
-    chdir.call(process, d)
-  }
-  if (Object.setPrototypeOf) Object.setPrototypeOf(process.chdir, chdir)
+  var util = __nccwpck_require__(3837);
+  /* istanbul ignore next */
+  if (typeof util.inherits !== 'function') throw '';
+  module.exports = util.inherits;
+} catch (e) {
+  /* istanbul ignore next */
+  module.exports = __nccwpck_require__(8531);
 }
 
-module.exports = patch
 
-function patch (fs) {
-  // (re-)implement some things that are known busted or missing.
+/***/ }),
 
-  // lchmod, broken prior to 0.6.2
-  // back-port the fix here.
-  if (constants.hasOwnProperty('O_SYMLINK') &&
-      process.version.match(/^v0\.6\.[0-2]|^v0\.5\./)) {
-    patchLchmod(fs)
-  }
+/***/ 8531:
+/***/ ((module) => {
 
-  // lutimes implementation, or no-op
-  if (!fs.lutimes) {
-    patchLutimes(fs)
-  }
-
-  // https://github.com/isaacs/node-graceful-fs/issues/4
-  // Chown should not fail on einval or eperm if non-root.
-  // It should not fail on enosys ever, as this just indicates
-  // that a fs doesn't support the intended operation.
-
-  fs.chown = chownFix(fs.chown)
-  fs.fchown = chownFix(fs.fchown)
-  fs.lchown = chownFix(fs.lchown)
-
-  fs.chmod = chmodFix(fs.chmod)
-  fs.fchmod = chmodFix(fs.fchmod)
-  fs.lchmod = chmodFix(fs.lchmod)
-
-  fs.chownSync = chownFixSync(fs.chownSync)
-  fs.fchownSync = chownFixSync(fs.fchownSync)
-  fs.lchownSync = chownFixSync(fs.lchownSync)
-
-  fs.chmodSync = chmodFixSync(fs.chmodSync)
-  fs.fchmodSync = chmodFixSync(fs.fchmodSync)
-  fs.lchmodSync = chmodFixSync(fs.lchmodSync)
-
-  fs.stat = statFix(fs.stat)
-  fs.fstat = statFix(fs.fstat)
-  fs.lstat = statFix(fs.lstat)
-
-  fs.statSync = statFixSync(fs.statSync)
-  fs.fstatSync = statFixSync(fs.fstatSync)
-  fs.lstatSync = statFixSync(fs.lstatSync)
-
-  // if lchmod/lchown do not exist, then make them no-ops
-  if (!fs.lchmod) {
-    fs.lchmod = function (path, mode, cb) {
-      if (cb) process.nextTick(cb)
-    }
-    fs.lchmodSync = function () {}
-  }
-  if (!fs.lchown) {
-    fs.lchown = function (path, uid, gid, cb) {
-      if (cb) process.nextTick(cb)
-    }
-    fs.lchownSync = function () {}
-  }
-
-  // on Windows, A/V software can lock the directory, causing this
-  // to fail with an EACCES or EPERM if the directory contains newly
-  // created files.  Try again on failure, for up to 60 seconds.
-
-  // Set the timeout this long because some Windows Anti-Virus, such as Parity
-  // bit9, may lock files for up to a minute, causing npm package install
-  // failures. Also, take care to yield the scheduler. Windows scheduling gives
-  // CPU to a busy looping process, which can cause the program causing the lock
-  // contention to be starved of CPU by node, so the contention doesn't resolve.
-  if (platform === "win32") {
-    fs.rename = (function (fs$rename) { return function (from, to, cb) {
-      var start = Date.now()
-      var backoff = 0;
-      fs$rename(from, to, function CB (er) {
-        if (er
-            && (er.code === "EACCES" || er.code === "EPERM")
-            && Date.now() - start < 60000) {
-          setTimeout(function() {
-            fs.stat(to, function (stater, st) {
-              if (stater && stater.code === "ENOENT")
-                fs$rename(from, to, CB);
-              else
-                cb(er)
-            })
-          }, backoff)
-          if (backoff < 100)
-            backoff += 10;
-          return;
+if (typeof Object.create === 'function') {
+  // implementation from standard node.js 'util' module
+  module.exports = function inherits(ctor, superCtor) {
+    if (superCtor) {
+      ctor.super_ = superCtor
+      ctor.prototype = Object.create(superCtor.prototype, {
+        constructor: {
+          value: ctor,
+          enumerable: false,
+          writable: true,
+          configurable: true
         }
-        if (cb) cb(er)
-      })
-    }})(fs.rename)
-  }
-
-  // if read() returns EAGAIN, then just try it again.
-  fs.read = (function (fs$read) {
-    function read (fd, buffer, offset, length, position, callback_) {
-      var callback
-      if (callback_ && typeof callback_ === 'function') {
-        var eagCounter = 0
-        callback = function (er, _, __) {
-          if (er && er.code === 'EAGAIN' && eagCounter < 10) {
-            eagCounter ++
-            return fs$read.call(fs, fd, buffer, offset, length, position, callback)
-          }
-          callback_.apply(this, arguments)
-        }
-      }
-      return fs$read.call(fs, fd, buffer, offset, length, position, callback)
-    }
-
-    // This ensures `util.promisify` works as it does for native `fs.read`.
-    if (Object.setPrototypeOf) Object.setPrototypeOf(read, fs$read)
-    return read
-  })(fs.read)
-
-  fs.readSync = (function (fs$readSync) { return function (fd, buffer, offset, length, position) {
-    var eagCounter = 0
-    while (true) {
-      try {
-        return fs$readSync.call(fs, fd, buffer, offset, length, position)
-      } catch (er) {
-        if (er.code === 'EAGAIN' && eagCounter < 10) {
-          eagCounter ++
-          continue
-        }
-        throw er
-      }
-    }
-  }})(fs.readSync)
-
-  function patchLchmod (fs) {
-    fs.lchmod = function (path, mode, callback) {
-      fs.open( path
-             , constants.O_WRONLY | constants.O_SYMLINK
-             , mode
-             , function (err, fd) {
-        if (err) {
-          if (callback) callback(err)
-          return
-        }
-        // prefer to return the chmod error, if one occurs,
-        // but still try to close, and report closing errors if they occur.
-        fs.fchmod(fd, mode, function (err) {
-          fs.close(fd, function(err2) {
-            if (callback) callback(err || err2)
-          })
-        })
       })
     }
-
-    fs.lchmodSync = function (path, mode) {
-      var fd = fs.openSync(path, constants.O_WRONLY | constants.O_SYMLINK, mode)
-
-      // prefer to return the chmod error, if one occurs,
-      // but still try to close, and report closing errors if they occur.
-      var threw = true
-      var ret
-      try {
-        ret = fs.fchmodSync(fd, mode)
-        threw = false
-      } finally {
-        if (threw) {
-          try {
-            fs.closeSync(fd)
-          } catch (er) {}
-        } else {
-          fs.closeSync(fd)
-        }
-      }
-      return ret
+  };
+} else {
+  // old school shim for old browsers
+  module.exports = function inherits(ctor, superCtor) {
+    if (superCtor) {
+      ctor.super_ = superCtor
+      var TempCtor = function () {}
+      TempCtor.prototype = superCtor.prototype
+      ctor.prototype = new TempCtor()
+      ctor.prototype.constructor = ctor
     }
-  }
-
-  function patchLutimes (fs) {
-    if (constants.hasOwnProperty("O_SYMLINK")) {
-      fs.lutimes = function (path, at, mt, cb) {
-        fs.open(path, constants.O_SYMLINK, function (er, fd) {
-          if (er) {
-            if (cb) cb(er)
-            return
-          }
-          fs.futimes(fd, at, mt, function (er) {
-            fs.close(fd, function (er2) {
-              if (cb) cb(er || er2)
-            })
-          })
-        })
-      }
-
-      fs.lutimesSync = function (path, at, mt) {
-        var fd = fs.openSync(path, constants.O_SYMLINK)
-        var ret
-        var threw = true
-        try {
-          ret = fs.futimesSync(fd, at, mt)
-          threw = false
-        } finally {
-          if (threw) {
-            try {
-              fs.closeSync(fd)
-            } catch (er) {}
-          } else {
-            fs.closeSync(fd)
-          }
-        }
-        return ret
-      }
-
-    } else {
-      fs.lutimes = function (_a, _b, _c, cb) { if (cb) process.nextTick(cb) }
-      fs.lutimesSync = function () {}
-    }
-  }
-
-  function chmodFix (orig) {
-    if (!orig) return orig
-    return function (target, mode, cb) {
-      return orig.call(fs, target, mode, function (er) {
-        if (chownErOk(er)) er = null
-        if (cb) cb.apply(this, arguments)
-      })
-    }
-  }
-
-  function chmodFixSync (orig) {
-    if (!orig) return orig
-    return function (target, mode) {
-      try {
-        return orig.call(fs, target, mode)
-      } catch (er) {
-        if (!chownErOk(er)) throw er
-      }
-    }
-  }
-
-
-  function chownFix (orig) {
-    if (!orig) return orig
-    return function (target, uid, gid, cb) {
-      return orig.call(fs, target, uid, gid, function (er) {
-        if (chownErOk(er)) er = null
-        if (cb) cb.apply(this, arguments)
-      })
-    }
-  }
-
-  function chownFixSync (orig) {
-    if (!orig) return orig
-    return function (target, uid, gid) {
-      try {
-        return orig.call(fs, target, uid, gid)
-      } catch (er) {
-        if (!chownErOk(er)) throw er
-      }
-    }
-  }
-
-  function statFix (orig) {
-    if (!orig) return orig
-    // Older versions of Node erroneously returned signed integers for
-    // uid + gid.
-    return function (target, options, cb) {
-      if (typeof options === 'function') {
-        cb = options
-        options = null
-      }
-      function callback (er, stats) {
-        if (stats) {
-          if (stats.uid < 0) stats.uid += 0x100000000
-          if (stats.gid < 0) stats.gid += 0x100000000
-        }
-        if (cb) cb.apply(this, arguments)
-      }
-      return options ? orig.call(fs, target, options, callback)
-        : orig.call(fs, target, callback)
-    }
-  }
-
-  function statFixSync (orig) {
-    if (!orig) return orig
-    // Older versions of Node erroneously returned signed integers for
-    // uid + gid.
-    return function (target, options) {
-      var stats = options ? orig.call(fs, target, options)
-        : orig.call(fs, target)
-      if (stats) {
-        if (stats.uid < 0) stats.uid += 0x100000000
-        if (stats.gid < 0) stats.gid += 0x100000000
-      }
-      return stats;
-    }
-  }
-
-  // ENOSYS means that the fs doesn't support the op. Just ignore
-  // that, because it doesn't matter.
-  //
-  // if there's no getuid, or if getuid() is something other
-  // than 0, and the error is EINVAL or EPERM, then just ignore
-  // it.
-  //
-  // This specific case is a silent failure in cp, install, tar,
-  // and most other unix tools that manage permissions.
-  //
-  // When running as root, or if other types of errors are
-  // encountered, then it's strict.
-  function chownErOk (er) {
-    if (!er)
-      return true
-
-    if (er.code === "ENOSYS")
-      return true
-
-    var nonroot = !process.getuid || process.getuid() !== 0
-    if (nonroot) {
-      if (er.code === "EINVAL" || er.code === "EPERM")
-        return true
-    }
-
-    return false
   }
 }
 
@@ -12144,3010 +10170,319 @@ exports.isPlainObject = isPlainObject;
 
 /***/ }),
 
-/***/ 4396:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
-
-
-var DataReader = __nccwpck_require__(3984);
-
-function ArrayReader(data) {
-    if (data) {
-        this.data = data;
-        this.length = this.data.length;
-        this.index = 0;
-        this.zero = 0;
-
-        for(var i = 0; i < this.data.length; i++) {
-            data[i] = data[i] & 0xFF;
-        }
-    }
-}
-ArrayReader.prototype = new DataReader();
-/**
- * @see DataReader.byteAt
- */
-ArrayReader.prototype.byteAt = function(i) {
-    return this.data[this.zero + i];
-};
-/**
- * @see DataReader.lastIndexOfSignature
- */
-ArrayReader.prototype.lastIndexOfSignature = function(sig) {
-    var sig0 = sig.charCodeAt(0),
-        sig1 = sig.charCodeAt(1),
-        sig2 = sig.charCodeAt(2),
-        sig3 = sig.charCodeAt(3);
-    for (var i = this.length - 4; i >= 0; --i) {
-        if (this.data[i] === sig0 && this.data[i + 1] === sig1 && this.data[i + 2] === sig2 && this.data[i + 3] === sig3) {
-            return i - this.zero;
-        }
-    }
-
-    return -1;
-};
-/**
- * @see DataReader.readData
- */
-ArrayReader.prototype.readData = function(size) {
-    this.checkOffset(size);
-    if(size === 0) {
-        return [];
-    }
-    var result = this.data.slice(this.zero + this.index, this.zero + this.index + size);
-    this.index += size;
-    return result;
-};
-module.exports = ArrayReader;
-
-
-/***/ }),
-
-/***/ 5674:
-/***/ ((__unused_webpack_module, exports) => {
-
-
-// private property
-var _keyStr = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
-
-
-// public method for encoding
-exports.encode = function(input, utf8) {
-    var output = "";
-    var chr1, chr2, chr3, enc1, enc2, enc3, enc4;
-    var i = 0;
-
-    while (i < input.length) {
-
-        chr1 = input.charCodeAt(i++);
-        chr2 = input.charCodeAt(i++);
-        chr3 = input.charCodeAt(i++);
-
-        enc1 = chr1 >> 2;
-        enc2 = ((chr1 & 3) << 4) | (chr2 >> 4);
-        enc3 = ((chr2 & 15) << 2) | (chr3 >> 6);
-        enc4 = chr3 & 63;
-
-        if (isNaN(chr2)) {
-            enc3 = enc4 = 64;
-        }
-        else if (isNaN(chr3)) {
-            enc4 = 64;
-        }
-
-        output = output + _keyStr.charAt(enc1) + _keyStr.charAt(enc2) + _keyStr.charAt(enc3) + _keyStr.charAt(enc4);
-
-    }
-
-    return output;
-};
-
-// public method for decoding
-exports.decode = function(input, utf8) {
-    var output = "";
-    var chr1, chr2, chr3;
-    var enc1, enc2, enc3, enc4;
-    var i = 0;
-
-    input = input.replace(/[^A-Za-z0-9\+\/\=]/g, "");
-
-    while (i < input.length) {
-
-        enc1 = _keyStr.indexOf(input.charAt(i++));
-        enc2 = _keyStr.indexOf(input.charAt(i++));
-        enc3 = _keyStr.indexOf(input.charAt(i++));
-        enc4 = _keyStr.indexOf(input.charAt(i++));
-
-        chr1 = (enc1 << 2) | (enc2 >> 4);
-        chr2 = ((enc2 & 15) << 4) | (enc3 >> 2);
-        chr3 = ((enc3 & 3) << 6) | enc4;
-
-        output = output + String.fromCharCode(chr1);
-
-        if (enc3 != 64) {
-            output = output + String.fromCharCode(chr2);
-        }
-        if (enc4 != 64) {
-            output = output + String.fromCharCode(chr3);
-        }
-
-    }
-
-    return output;
-
-};
-
-
-/***/ }),
-
-/***/ 2737:
+/***/ 7305:
 /***/ ((module) => {
 
+var toString = {}.toString;
 
-function CompressedObject() {
-    this.compressedSize = 0;
-    this.uncompressedSize = 0;
-    this.crc32 = 0;
-    this.compressionMethod = null;
-    this.compressedContent = null;
+module.exports = Array.isArray || function (arr) {
+  return toString.call(arr) == '[object Array]';
+};
+
+
+/***/ }),
+
+/***/ 684:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+
+var immediate = __nccwpck_require__(2335);
+
+/* istanbul ignore next */
+function INTERNAL() {}
+
+var handlers = {};
+
+var REJECTED = ['REJECTED'];
+var FULFILLED = ['FULFILLED'];
+var PENDING = ['PENDING'];
+/* istanbul ignore else */
+if (!process.browser) {
+  // in which we actually take advantage of JS scoping
+  var UNHANDLED = ['UNHANDLED'];
 }
 
-CompressedObject.prototype = {
-    /**
-     * Return the decompressed content in an unspecified format.
-     * The format will depend on the decompressor.
-     * @return {Object} the decompressed content.
-     */
-    getContent: function() {
-        return null; // see implementation
-    },
-    /**
-     * Return the compressed content in an unspecified format.
-     * The format will depend on the compressed conten source.
-     * @return {Object} the compressed content.
-     */
-    getCompressedContent: function() {
-        return null; // see implementation
-    }
-};
-module.exports = CompressedObject;
+module.exports = Promise;
 
-
-/***/ }),
-
-/***/ 673:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-
-exports.STORE = {
-    magic: "\x00\x00",
-    compress: function(content, compressionOptions) {
-        return content; // no compression
-    },
-    uncompress: function(content) {
-        return content; // no compression
-    },
-    compressInputType: null,
-    uncompressInputType: null
-};
-exports.DEFLATE = __nccwpck_require__(4808);
-
-
-/***/ }),
-
-/***/ 2125:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
-
-
-
-var utils = __nccwpck_require__(9600);
-
-var table = [
-    0x00000000, 0x77073096, 0xEE0E612C, 0x990951BA,
-    0x076DC419, 0x706AF48F, 0xE963A535, 0x9E6495A3,
-    0x0EDB8832, 0x79DCB8A4, 0xE0D5E91E, 0x97D2D988,
-    0x09B64C2B, 0x7EB17CBD, 0xE7B82D07, 0x90BF1D91,
-    0x1DB71064, 0x6AB020F2, 0xF3B97148, 0x84BE41DE,
-    0x1ADAD47D, 0x6DDDE4EB, 0xF4D4B551, 0x83D385C7,
-    0x136C9856, 0x646BA8C0, 0xFD62F97A, 0x8A65C9EC,
-    0x14015C4F, 0x63066CD9, 0xFA0F3D63, 0x8D080DF5,
-    0x3B6E20C8, 0x4C69105E, 0xD56041E4, 0xA2677172,
-    0x3C03E4D1, 0x4B04D447, 0xD20D85FD, 0xA50AB56B,
-    0x35B5A8FA, 0x42B2986C, 0xDBBBC9D6, 0xACBCF940,
-    0x32D86CE3, 0x45DF5C75, 0xDCD60DCF, 0xABD13D59,
-    0x26D930AC, 0x51DE003A, 0xC8D75180, 0xBFD06116,
-    0x21B4F4B5, 0x56B3C423, 0xCFBA9599, 0xB8BDA50F,
-    0x2802B89E, 0x5F058808, 0xC60CD9B2, 0xB10BE924,
-    0x2F6F7C87, 0x58684C11, 0xC1611DAB, 0xB6662D3D,
-    0x76DC4190, 0x01DB7106, 0x98D220BC, 0xEFD5102A,
-    0x71B18589, 0x06B6B51F, 0x9FBFE4A5, 0xE8B8D433,
-    0x7807C9A2, 0x0F00F934, 0x9609A88E, 0xE10E9818,
-    0x7F6A0DBB, 0x086D3D2D, 0x91646C97, 0xE6635C01,
-    0x6B6B51F4, 0x1C6C6162, 0x856530D8, 0xF262004E,
-    0x6C0695ED, 0x1B01A57B, 0x8208F4C1, 0xF50FC457,
-    0x65B0D9C6, 0x12B7E950, 0x8BBEB8EA, 0xFCB9887C,
-    0x62DD1DDF, 0x15DA2D49, 0x8CD37CF3, 0xFBD44C65,
-    0x4DB26158, 0x3AB551CE, 0xA3BC0074, 0xD4BB30E2,
-    0x4ADFA541, 0x3DD895D7, 0xA4D1C46D, 0xD3D6F4FB,
-    0x4369E96A, 0x346ED9FC, 0xAD678846, 0xDA60B8D0,
-    0x44042D73, 0x33031DE5, 0xAA0A4C5F, 0xDD0D7CC9,
-    0x5005713C, 0x270241AA, 0xBE0B1010, 0xC90C2086,
-    0x5768B525, 0x206F85B3, 0xB966D409, 0xCE61E49F,
-    0x5EDEF90E, 0x29D9C998, 0xB0D09822, 0xC7D7A8B4,
-    0x59B33D17, 0x2EB40D81, 0xB7BD5C3B, 0xC0BA6CAD,
-    0xEDB88320, 0x9ABFB3B6, 0x03B6E20C, 0x74B1D29A,
-    0xEAD54739, 0x9DD277AF, 0x04DB2615, 0x73DC1683,
-    0xE3630B12, 0x94643B84, 0x0D6D6A3E, 0x7A6A5AA8,
-    0xE40ECF0B, 0x9309FF9D, 0x0A00AE27, 0x7D079EB1,
-    0xF00F9344, 0x8708A3D2, 0x1E01F268, 0x6906C2FE,
-    0xF762575D, 0x806567CB, 0x196C3671, 0x6E6B06E7,
-    0xFED41B76, 0x89D32BE0, 0x10DA7A5A, 0x67DD4ACC,
-    0xF9B9DF6F, 0x8EBEEFF9, 0x17B7BE43, 0x60B08ED5,
-    0xD6D6A3E8, 0xA1D1937E, 0x38D8C2C4, 0x4FDFF252,
-    0xD1BB67F1, 0xA6BC5767, 0x3FB506DD, 0x48B2364B,
-    0xD80D2BDA, 0xAF0A1B4C, 0x36034AF6, 0x41047A60,
-    0xDF60EFC3, 0xA867DF55, 0x316E8EEF, 0x4669BE79,
-    0xCB61B38C, 0xBC66831A, 0x256FD2A0, 0x5268E236,
-    0xCC0C7795, 0xBB0B4703, 0x220216B9, 0x5505262F,
-    0xC5BA3BBE, 0xB2BD0B28, 0x2BB45A92, 0x5CB36A04,
-    0xC2D7FFA7, 0xB5D0CF31, 0x2CD99E8B, 0x5BDEAE1D,
-    0x9B64C2B0, 0xEC63F226, 0x756AA39C, 0x026D930A,
-    0x9C0906A9, 0xEB0E363F, 0x72076785, 0x05005713,
-    0x95BF4A82, 0xE2B87A14, 0x7BB12BAE, 0x0CB61B38,
-    0x92D28E9B, 0xE5D5BE0D, 0x7CDCEFB7, 0x0BDBDF21,
-    0x86D3D2D4, 0xF1D4E242, 0x68DDB3F8, 0x1FDA836E,
-    0x81BE16CD, 0xF6B9265B, 0x6FB077E1, 0x18B74777,
-    0x88085AE6, 0xFF0F6A70, 0x66063BCA, 0x11010B5C,
-    0x8F659EFF, 0xF862AE69, 0x616BFFD3, 0x166CCF45,
-    0xA00AE278, 0xD70DD2EE, 0x4E048354, 0x3903B3C2,
-    0xA7672661, 0xD06016F7, 0x4969474D, 0x3E6E77DB,
-    0xAED16A4A, 0xD9D65ADC, 0x40DF0B66, 0x37D83BF0,
-    0xA9BCAE53, 0xDEBB9EC5, 0x47B2CF7F, 0x30B5FFE9,
-    0xBDBDF21C, 0xCABAC28A, 0x53B39330, 0x24B4A3A6,
-    0xBAD03605, 0xCDD70693, 0x54DE5729, 0x23D967BF,
-    0xB3667A2E, 0xC4614AB8, 0x5D681B02, 0x2A6F2B94,
-    0xB40BBE37, 0xC30C8EA1, 0x5A05DF1B, 0x2D02EF8D
-];
-
-/**
- *
- *  Javascript crc32
- *  http://www.webtoolkit.info/
- *
- */
-module.exports = function crc32(input, crc) {
-    if (typeof input === "undefined" || !input.length) {
-        return 0;
-    }
-
-    var isArray = utils.getTypeOf(input) !== "string";
-
-    if (typeof(crc) == "undefined") {
-        crc = 0;
-    }
-    var x = 0;
-    var y = 0;
-    var b = 0;
-
-    crc = crc ^ (-1);
-    for (var i = 0, iTop = input.length; i < iTop; i++) {
-        b = isArray ? input[i] : input.charCodeAt(i);
-        y = (crc ^ b) & 0xFF;
-        x = table[y];
-        crc = (crc >>> 8) ^ x;
-    }
-
-    return crc ^ (-1);
-};
-// vim: set shiftwidth=4 softtabstop=4:
-
-
-/***/ }),
-
-/***/ 3984:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
-
-
-var utils = __nccwpck_require__(9600);
-
-function DataReader(data) {
-    this.data = null; // type : see implementation
-    this.length = 0;
-    this.index = 0;
-    this.zero = 0;
+function Promise(resolver) {
+  if (typeof resolver !== 'function') {
+    throw new TypeError('resolver must be a function');
+  }
+  this.state = PENDING;
+  this.queue = [];
+  this.outcome = void 0;
+  /* istanbul ignore else */
+  if (!process.browser) {
+    this.handled = UNHANDLED;
+  }
+  if (resolver !== INTERNAL) {
+    safelyResolveThenable(this, resolver);
+  }
 }
-DataReader.prototype = {
-    /**
-     * Check that the offset will not go too far.
-     * @param {string} offset the additional offset to check.
-     * @throws {Error} an Error if the offset is out of bounds.
-     */
-    checkOffset: function(offset) {
-        this.checkIndex(this.index + offset);
-    },
-    /**
-     * Check that the specifed index will not be too far.
-     * @param {string} newIndex the index to check.
-     * @throws {Error} an Error if the index is out of bounds.
-     */
-    checkIndex: function(newIndex) {
-        if (this.length < this.zero + newIndex || newIndex < 0) {
-            throw new Error("End of data reached (data length = " + this.length + ", asked index = " + (newIndex) + "). Corrupted zip ?");
-        }
-    },
-    /**
-     * Change the index.
-     * @param {number} newIndex The new index.
-     * @throws {Error} if the new index is out of the data.
-     */
-    setIndex: function(newIndex) {
-        this.checkIndex(newIndex);
-        this.index = newIndex;
-    },
-    /**
-     * Skip the next n bytes.
-     * @param {number} n the number of bytes to skip.
-     * @throws {Error} if the new index is out of the data.
-     */
-    skip: function(n) {
-        this.setIndex(this.index + n);
-    },
-    /**
-     * Get the byte at the specified index.
-     * @param {number} i the index to use.
-     * @return {number} a byte.
-     */
-    byteAt: function(i) {
-        // see implementations
-    },
-    /**
-     * Get the next number with a given byte size.
-     * @param {number} size the number of bytes to read.
-     * @return {number} the corresponding number.
-     */
-    readInt: function(size) {
-        var result = 0,
-            i;
-        this.checkOffset(size);
-        for (i = this.index + size - 1; i >= this.index; i--) {
-            result = (result << 8) + this.byteAt(i);
-        }
-        this.index += size;
-        return result;
-    },
-    /**
-     * Get the next string with a given byte size.
-     * @param {number} size the number of bytes to read.
-     * @return {string} the corresponding string.
-     */
-    readString: function(size) {
-        return utils.transformTo("string", this.readData(size));
-    },
-    /**
-     * Get raw data without conversion, <size> bytes.
-     * @param {number} size the number of bytes to read.
-     * @return {Object} the raw data, implementation specific.
-     */
-    readData: function(size) {
-        // see implementations
-    },
-    /**
-     * Find the last occurence of a zip signature (4 bytes).
-     * @param {string} sig the signature to find.
-     * @return {number} the index of the last occurence, -1 if not found.
-     */
-    lastIndexOfSignature: function(sig) {
-        // see implementations
-    },
-    /**
-     * Get the next date.
-     * @return {Date} the date.
-     */
-    readDate: function() {
-        var dostime = this.readInt(4);
-        return new Date(
-        ((dostime >> 25) & 0x7f) + 1980, // year
-        ((dostime >> 21) & 0x0f) - 1, // month
-        (dostime >> 16) & 0x1f, // day
-        (dostime >> 11) & 0x1f, // hour
-        (dostime >> 5) & 0x3f, // minute
-        (dostime & 0x1f) << 1); // second
-    }
-};
-module.exports = DataReader;
 
-
-/***/ }),
-
-/***/ 4064:
-/***/ ((__unused_webpack_module, exports) => {
-
-
-exports.base64 = false;
-exports.binary = false;
-exports.dir = false;
-exports.createFolders = false;
-exports.date = null;
-exports.compression = null;
-exports.compressionOptions = null;
-exports.comment = null;
-exports.unixPermissions = null;
-exports.dosPermissions = null;
-
-
-/***/ }),
-
-/***/ 611:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-
-var utils = __nccwpck_require__(9600);
-
-/**
- * @deprecated
- * This function will be removed in a future version without replacement.
- */
-exports.string2binary = function(str) {
-    return utils.string2binary(str);
-};
-
-/**
- * @deprecated
- * This function will be removed in a future version without replacement.
- */
-exports.string2Uint8Array = function(str) {
-    return utils.transformTo("uint8array", str);
-};
-
-/**
- * @deprecated
- * This function will be removed in a future version without replacement.
- */
-exports.uint8Array2String = function(array) {
-    return utils.transformTo("string", array);
-};
-
-/**
- * @deprecated
- * This function will be removed in a future version without replacement.
- */
-exports.string2Blob = function(str) {
-    var buffer = utils.transformTo("arraybuffer", str);
-    return utils.arrayBuffer2Blob(buffer);
-};
-
-/**
- * @deprecated
- * This function will be removed in a future version without replacement.
- */
-exports.arrayBuffer2Blob = function(buffer) {
-    return utils.arrayBuffer2Blob(buffer);
-};
-
-/**
- * @deprecated
- * This function will be removed in a future version without replacement.
- */
-exports.transformTo = function(outputType, input) {
-    return utils.transformTo(outputType, input);
-};
-
-/**
- * @deprecated
- * This function will be removed in a future version without replacement.
- */
-exports.getTypeOf = function(input) {
-    return utils.getTypeOf(input);
-};
-
-/**
- * @deprecated
- * This function will be removed in a future version without replacement.
- */
-exports.checkSupport = function(type) {
-    return utils.checkSupport(type);
-};
-
-/**
- * @deprecated
- * This value will be removed in a future version without replacement.
- */
-exports.MAX_VALUE_16BITS = utils.MAX_VALUE_16BITS;
-
-/**
- * @deprecated
- * This value will be removed in a future version without replacement.
- */
-exports.MAX_VALUE_32BITS = utils.MAX_VALUE_32BITS;
-
-
-/**
- * @deprecated
- * This function will be removed in a future version without replacement.
- */
-exports.pretty = function(str) {
-    return utils.pretty(str);
-};
-
-/**
- * @deprecated
- * This function will be removed in a future version without replacement.
- */
-exports.findCompression = function(compressionMethod) {
-    return utils.findCompression(compressionMethod);
-};
-
-/**
- * @deprecated
- * This function will be removed in a future version without replacement.
- */
-exports.isRegExp = function (object) {
-    return utils.isRegExp(object);
-};
-
-
-
-/***/ }),
-
-/***/ 4808:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-
-var USE_TYPEDARRAY = (typeof Uint8Array !== 'undefined') && (typeof Uint16Array !== 'undefined') && (typeof Uint32Array !== 'undefined');
-
-var pako = __nccwpck_require__(7728);
-exports.uncompressInputType = USE_TYPEDARRAY ? "uint8array" : "array";
-exports.compressInputType = USE_TYPEDARRAY ? "uint8array" : "array";
-
-exports.magic = "\x08\x00";
-exports.compress = function(input, compressionOptions) {
-    return pako.deflateRaw(input, {
-        level : compressionOptions.level || -1 // default compression
-    });
-};
-exports.uncompress =  function(input) {
-    return pako.inflateRaw(input);
-};
-
-
-/***/ }),
-
-/***/ 6573:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
-
-
-
-var base64 = __nccwpck_require__(5674);
-
-/**
-Usage:
-   zip = new JSZip();
-   zip.file("hello.txt", "Hello, World!").file("tempfile", "nothing");
-   zip.folder("images").file("smile.gif", base64Data, {base64: true});
-   zip.file("Xmas.txt", "Ho ho ho !", {date : new Date("December 25, 2007 00:00:01")});
-   zip.remove("tempfile");
-
-   base64zip = zip.generate();
-
-**/
-
-/**
- * Representation a of zip file in js
- * @constructor
- * @param {String=|ArrayBuffer=|Uint8Array=} data the data to load, if any (optional).
- * @param {Object=} options the options for creating this objects (optional).
- */
-function JSZip(data, options) {
-    // if this constructor is used without `new`, it adds `new` before itself:
-    if(!(this instanceof JSZip)) return new JSZip(data, options);
-
-    // object containing the files :
-    // {
-    //   "folder/" : {...},
-    //   "folder/data.txt" : {...}
-    // }
-    this.files = {};
-
-    this.comment = null;
-
-    // Where we are in the hierarchy
-    this.root = "";
-    if (data) {
-        this.load(data, options);
-    }
-    this.clone = function() {
-        var newObj = new JSZip();
-        for (var i in this) {
-            if (typeof this[i] !== "function") {
-                newObj[i] = this[i];
-            }
-        }
-        return newObj;
-    };
-}
-JSZip.prototype = __nccwpck_require__(3855);
-JSZip.prototype.load = __nccwpck_require__(6909);
-JSZip.support = __nccwpck_require__(7294);
-JSZip.defaults = __nccwpck_require__(4064);
-
-/**
- * @deprecated
- * This namespace will be removed in a future version without replacement.
- */
-JSZip.utils = __nccwpck_require__(611);
-
-JSZip.base64 = {
-    /**
-     * @deprecated
-     * This method will be removed in a future version without replacement.
-     */
-    encode : function(input) {
-        return base64.encode(input);
-    },
-    /**
-     * @deprecated
-     * This method will be removed in a future version without replacement.
-     */
-    decode : function(input) {
-        return base64.decode(input);
-    }
-};
-JSZip.compressions = __nccwpck_require__(673);
-module.exports = JSZip;
-
-
-/***/ }),
-
-/***/ 6909:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
-
-
-var base64 = __nccwpck_require__(5674);
-var utf8 = __nccwpck_require__(9278);
-var utils = __nccwpck_require__(9600);
-var ZipEntries = __nccwpck_require__(444);
-module.exports = function(data, options) {
-    var files, zipEntries, i, input;
-    options = utils.extend(options || {}, {
-        base64: false,
-        checkCRC32: false,
-        optimizedBinaryString : false,
-        createFolders: false,
-        decodeFileName: utf8.utf8decode
-    });
-    if (options.base64) {
-        data = base64.decode(data);
-    }
-
-    zipEntries = new ZipEntries(data, options);
-    files = zipEntries.files;
-    for (i = 0; i < files.length; i++) {
-        input = files[i];
-        this.file(input.fileNameStr, input.decompressed, {
-            binary: true,
-            optimizedBinaryString: true,
-            date: input.date,
-            dir: input.dir,
-            comment : input.fileCommentStr.length ? input.fileCommentStr : null,
-            unixPermissions : input.unixPermissions,
-            dosPermissions : input.dosPermissions,
-            createFolders: options.createFolders
-        });
-    }
-    if (zipEntries.zipComment.length) {
-        this.comment = zipEntries.zipComment;
-    }
-
+Promise.prototype.finally = function (callback) {
+  if (typeof callback !== 'function') {
     return this;
+  }
+  var p = this.constructor;
+  return this.then(resolve, reject);
+
+  function resolve(value) {
+    function yes () {
+      return value;
+    }
+    return p.resolve(callback()).then(yes);
+  }
+  function reject(reason) {
+    function no () {
+      throw reason;
+    }
+    return p.resolve(callback()).then(no);
+  }
 };
-
-
-/***/ }),
-
-/***/ 6214:
-/***/ ((module) => {
-
-
-module.exports = function(data, encoding){
-    return new Buffer(data, encoding);
+Promise.prototype.catch = function (onRejected) {
+  return this.then(null, onRejected);
 };
-module.exports.test = function(b){
-    return Buffer.isBuffer(b);
+Promise.prototype.then = function (onFulfilled, onRejected) {
+  if (typeof onFulfilled !== 'function' && this.state === FULFILLED ||
+    typeof onRejected !== 'function' && this.state === REJECTED) {
+    return this;
+  }
+  var promise = new this.constructor(INTERNAL);
+  /* istanbul ignore else */
+  if (!process.browser) {
+    if (this.handled === UNHANDLED) {
+      this.handled = null;
+    }
+  }
+  if (this.state !== PENDING) {
+    var resolver = this.state === FULFILLED ? onFulfilled : onRejected;
+    unwrap(promise, resolver, this.outcome);
+  } else {
+    this.queue.push(new QueueItem(promise, onFulfilled, onRejected));
+  }
+
+  return promise;
 };
-
-
-/***/ }),
-
-/***/ 7418:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
-
-
-var Uint8ArrayReader = __nccwpck_require__(8485);
-
-function NodeBufferReader(data) {
-    this.data = data;
-    this.length = this.data.length;
-    this.index = 0;
-    this.zero = 0;
+function QueueItem(promise, onFulfilled, onRejected) {
+  this.promise = promise;
+  if (typeof onFulfilled === 'function') {
+    this.onFulfilled = onFulfilled;
+    this.callFulfilled = this.otherCallFulfilled;
+  }
+  if (typeof onRejected === 'function') {
+    this.onRejected = onRejected;
+    this.callRejected = this.otherCallRejected;
+  }
 }
-NodeBufferReader.prototype = new Uint8ArrayReader();
-
-/**
- * @see DataReader.readData
- */
-NodeBufferReader.prototype.readData = function(size) {
-    this.checkOffset(size);
-    var result = this.data.slice(this.zero + this.index, this.zero + this.index + size);
-    this.index += size;
-    return result;
+QueueItem.prototype.callFulfilled = function (value) {
+  handlers.resolve(this.promise, value);
 };
-module.exports = NodeBufferReader;
-
-
-/***/ }),
-
-/***/ 3855:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
-
-
-var support = __nccwpck_require__(7294);
-var utils = __nccwpck_require__(9600);
-var crc32 = __nccwpck_require__(2125);
-var signature = __nccwpck_require__(1978);
-var defaults = __nccwpck_require__(4064);
-var base64 = __nccwpck_require__(5674);
-var compressions = __nccwpck_require__(673);
-var CompressedObject = __nccwpck_require__(2737);
-var nodeBuffer = __nccwpck_require__(6214);
-var utf8 = __nccwpck_require__(9278);
-var StringWriter = __nccwpck_require__(5931);
-var Uint8ArrayWriter = __nccwpck_require__(3317);
-
-/**
- * Returns the raw data of a ZipObject, decompress the content if necessary.
- * @param {ZipObject} file the file to use.
- * @return {String|ArrayBuffer|Uint8Array|Buffer} the data.
- */
-var getRawData = function(file) {
-    if (file._data instanceof CompressedObject) {
-        file._data = file._data.getContent();
-        file.options.binary = true;
-        file.options.base64 = false;
-
-        if (utils.getTypeOf(file._data) === "uint8array") {
-            var copy = file._data;
-            // when reading an arraybuffer, the CompressedObject mechanism will keep it and subarray() a Uint8Array.
-            // if we request a file in the same format, we might get the same Uint8Array or its ArrayBuffer (the original zip file).
-            file._data = new Uint8Array(copy.length);
-            // with an empty Uint8Array, Opera fails with a "Offset larger than array size"
-            if (copy.length !== 0) {
-                file._data.set(copy, 0);
-            }
-        }
-    }
-    return file._data;
+QueueItem.prototype.otherCallFulfilled = function (value) {
+  unwrap(this.promise, this.onFulfilled, value);
+};
+QueueItem.prototype.callRejected = function (value) {
+  handlers.reject(this.promise, value);
+};
+QueueItem.prototype.otherCallRejected = function (value) {
+  unwrap(this.promise, this.onRejected, value);
 };
 
-/**
- * Returns the data of a ZipObject in a binary form. If the content is an unicode string, encode it.
- * @param {ZipObject} file the file to use.
- * @return {String|ArrayBuffer|Uint8Array|Buffer} the data.
- */
-var getBinaryData = function(file) {
-    var result = getRawData(file),
-        type = utils.getTypeOf(result);
-    if (type === "string") {
-        if (!file.options.binary) {
-            // unicode text !
-            // unicode string => binary string is a painful process, check if we can avoid it.
-            if (support.nodebuffer) {
-                return nodeBuffer(result, "utf-8");
-            }
-        }
-        return file.asBinary();
-    }
-    return result;
-};
-
-/**
- * Transform this._data into a string.
- * @param {function} filter a function String -> String, applied if not null on the result.
- * @return {String} the string representing this._data.
- */
-var dataToString = function(asUTF8) {
-    var result = getRawData(this);
-    if (result === null || typeof result === "undefined") {
-        return "";
-    }
-    // if the data is a base64 string, we decode it before checking the encoding !
-    if (this.options.base64) {
-        result = base64.decode(result);
-    }
-    if (asUTF8 && this.options.binary) {
-        // JSZip.prototype.utf8decode supports arrays as input
-        // skip to array => string step, utf8decode will do it.
-        result = out.utf8decode(result);
-    }
-    else {
-        // no utf8 transformation, do the array => string step.
-        result = utils.transformTo("string", result);
-    }
-
-    if (!asUTF8 && !this.options.binary) {
-        result = utils.transformTo("string", out.utf8encode(result));
-    }
-    return result;
-};
-/**
- * A simple object representing a file in the zip file.
- * @constructor
- * @param {string} name the name of the file
- * @param {String|ArrayBuffer|Uint8Array|Buffer} data the data
- * @param {Object} options the options of the file
- */
-var ZipObject = function(name, data, options) {
-    this.name = name;
-    this.dir = options.dir;
-    this.date = options.date;
-    this.comment = options.comment;
-    this.unixPermissions = options.unixPermissions;
-    this.dosPermissions = options.dosPermissions;
-
-    this._data = data;
-    this.options = options;
-
-    /*
-     * This object contains initial values for dir and date.
-     * With them, we can check if the user changed the deprecated metadata in
-     * `ZipObject#options` or not.
-     */
-    this._initialMetadata = {
-      dir : options.dir,
-      date : options.date
-    };
-};
-
-ZipObject.prototype = {
-    /**
-     * Return the content as UTF8 string.
-     * @return {string} the UTF8 string.
-     */
-    asText: function() {
-        return dataToString.call(this, true);
-    },
-    /**
-     * Returns the binary content.
-     * @return {string} the content as binary.
-     */
-    asBinary: function() {
-        return dataToString.call(this, false);
-    },
-    /**
-     * Returns the content as a nodejs Buffer.
-     * @return {Buffer} the content as a Buffer.
-     */
-    asNodeBuffer: function() {
-        var result = getBinaryData(this);
-        return utils.transformTo("nodebuffer", result);
-    },
-    /**
-     * Returns the content as an Uint8Array.
-     * @return {Uint8Array} the content as an Uint8Array.
-     */
-    asUint8Array: function() {
-        var result = getBinaryData(this);
-        return utils.transformTo("uint8array", result);
-    },
-    /**
-     * Returns the content as an ArrayBuffer.
-     * @return {ArrayBuffer} the content as an ArrayBufer.
-     */
-    asArrayBuffer: function() {
-        return this.asUint8Array().buffer;
-    }
-};
-
-/**
- * Transform an integer into a string in hexadecimal.
- * @private
- * @param {number} dec the number to convert.
- * @param {number} bytes the number of bytes to generate.
- * @returns {string} the result.
- */
-var decToHex = function(dec, bytes) {
-    var hex = "",
-        i;
-    for (i = 0; i < bytes; i++) {
-        hex += String.fromCharCode(dec & 0xff);
-        dec = dec >>> 8;
-    }
-    return hex;
-};
-
-/**
- * Transforms the (incomplete) options from the user into the complete
- * set of options to create a file.
- * @private
- * @param {Object} o the options from the user.
- * @return {Object} the complete set of options.
- */
-var prepareFileAttrs = function(o) {
-    o = o || {};
-    if (o.base64 === true && (o.binary === null || o.binary === undefined)) {
-        o.binary = true;
-    }
-    o = utils.extend(o, defaults);
-    o.date = o.date || new Date();
-    if (o.compression !== null) o.compression = o.compression.toUpperCase();
-
-    return o;
-};
-
-/**
- * Add a file in the current folder.
- * @private
- * @param {string} name the name of the file
- * @param {String|ArrayBuffer|Uint8Array|Buffer} data the data of the file
- * @param {Object} o the options of the file
- * @return {Object} the new file.
- */
-var fileAdd = function(name, data, o) {
-    // be sure sub folders exist
-    var dataType = utils.getTypeOf(data),
-        parent;
-
-    o = prepareFileAttrs(o);
-
-    if (typeof o.unixPermissions === "string") {
-        o.unixPermissions = parseInt(o.unixPermissions, 8);
-    }
-
-    // UNX_IFDIR  0040000 see zipinfo.c
-    if (o.unixPermissions && (o.unixPermissions & 0x4000)) {
-        o.dir = true;
-    }
-    // Bit 4    Directory
-    if (o.dosPermissions && (o.dosPermissions & 0x0010)) {
-        o.dir = true;
-    }
-
-    if (o.dir) {
-        name = forceTrailingSlash(name);
-    }
-
-    if (o.createFolders && (parent = parentFolder(name))) {
-        folderAdd.call(this, parent, true);
-    }
-
-    if (o.dir || data === null || typeof data === "undefined") {
-        o.base64 = false;
-        o.binary = false;
-        data = null;
-        dataType = null;
-    }
-    else if (dataType === "string") {
-        if (o.binary && !o.base64) {
-            // optimizedBinaryString == true means that the file has already been filtered with a 0xFF mask
-            if (o.optimizedBinaryString !== true) {
-                // this is a string, not in a base64 format.
-                // Be sure that this is a correct "binary string"
-                data = utils.string2binary(data);
-            }
-        }
-    }
-    else { // arraybuffer, uint8array, ...
-        o.base64 = false;
-        o.binary = true;
-
-        if (!dataType && !(data instanceof CompressedObject)) {
-            throw new Error("The data of '" + name + "' is in an unsupported format !");
-        }
-
-        // special case : it's way easier to work with Uint8Array than with ArrayBuffer
-        if (dataType === "arraybuffer") {
-            data = utils.transformTo("uint8array", data);
-        }
-    }
-
-    var object = new ZipObject(name, data, o);
-    this.files[name] = object;
-    return object;
-};
-
-/**
- * Find the parent folder of the path.
- * @private
- * @param {string} path the path to use
- * @return {string} the parent folder, or ""
- */
-var parentFolder = function (path) {
-    if (path.slice(-1) == '/') {
-        path = path.substring(0, path.length - 1);
-    }
-    var lastSlash = path.lastIndexOf('/');
-    return (lastSlash > 0) ? path.substring(0, lastSlash) : "";
-};
-
-
-/**
- * Returns the path with a slash at the end.
- * @private
- * @param {String} path the path to check.
- * @return {String} the path with a trailing slash.
- */
-var forceTrailingSlash = function(path) {
-    // Check the name ends with a /
-    if (path.slice(-1) != "/") {
-        path += "/"; // IE doesn't like substr(-1)
-    }
-    return path;
-};
-/**
- * Add a (sub) folder in the current folder.
- * @private
- * @param {string} name the folder's name
- * @param {boolean=} [createFolders] If true, automatically create sub
- *  folders. Defaults to false.
- * @return {Object} the new folder.
- */
-var folderAdd = function(name, createFolders) {
-    createFolders = (typeof createFolders !== 'undefined') ? createFolders : false;
-
-    name = forceTrailingSlash(name);
-
-    // Does this folder already exist?
-    if (!this.files[name]) {
-        fileAdd.call(this, name, null, {
-            dir: true,
-            createFolders: createFolders
-        });
-    }
-    return this.files[name];
-};
-
-/**
- * Generate a JSZip.CompressedObject for a given zipOject.
- * @param {ZipObject} file the object to read.
- * @param {JSZip.compression} compression the compression to use.
- * @param {Object} compressionOptions the options to use when compressing.
- * @return {JSZip.CompressedObject} the compressed result.
- */
-var generateCompressedObjectFrom = function(file, compression, compressionOptions) {
-    var result = new CompressedObject(),
-        content;
-
-    // the data has not been decompressed, we might reuse things !
-    if (file._data instanceof CompressedObject) {
-        result.uncompressedSize = file._data.uncompressedSize;
-        result.crc32 = file._data.crc32;
-
-        if (result.uncompressedSize === 0 || file.dir) {
-            compression = compressions['STORE'];
-            result.compressedContent = "";
-            result.crc32 = 0;
-        }
-        else if (file._data.compressionMethod === compression.magic) {
-            result.compressedContent = file._data.getCompressedContent();
-        }
-        else {
-            content = file._data.getContent();
-            // need to decompress / recompress
-            result.compressedContent = compression.compress(utils.transformTo(compression.compressInputType, content), compressionOptions);
-        }
-    }
-    else {
-        // have uncompressed data
-        content = getBinaryData(file);
-        if (!content || content.length === 0 || file.dir) {
-            compression = compressions['STORE'];
-            content = "";
-        }
-        result.uncompressedSize = content.length;
-        result.crc32 = crc32(content);
-        result.compressedContent = compression.compress(utils.transformTo(compression.compressInputType, content), compressionOptions);
-    }
-
-    result.compressedSize = result.compressedContent.length;
-    result.compressionMethod = compression.magic;
-
-    return result;
-};
-
-
-
-
-/**
- * Generate the UNIX part of the external file attributes.
- * @param {Object} unixPermissions the unix permissions or null.
- * @param {Boolean} isDir true if the entry is a directory, false otherwise.
- * @return {Number} a 32 bit integer.
- *
- * adapted from http://unix.stackexchange.com/questions/14705/the-zip-formats-external-file-attribute :
- *
- * TTTTsstrwxrwxrwx0000000000ADVSHR
- * ^^^^____________________________ file type, see zipinfo.c (UNX_*)
- *     ^^^_________________________ setuid, setgid, sticky
- *        ^^^^^^^^^________________ permissions
- *                 ^^^^^^^^^^______ not used ?
- *                           ^^^^^^ DOS attribute bits : Archive, Directory, Volume label, System file, Hidden, Read only
- */
-var generateUnixExternalFileAttr = function (unixPermissions, isDir) {
-
-    var result = unixPermissions;
-    if (!unixPermissions) {
-        // I can't use octal values in strict mode, hence the hexa.
-        //  040775 => 0x41fd
-        // 0100664 => 0x81b4
-        result = isDir ? 0x41fd : 0x81b4;
-    }
-
-    return (result & 0xFFFF) << 16;
-};
-
-/**
- * Generate the DOS part of the external file attributes.
- * @param {Object} dosPermissions the dos permissions or null.
- * @param {Boolean} isDir true if the entry is a directory, false otherwise.
- * @return {Number} a 32 bit integer.
- *
- * Bit 0     Read-Only
- * Bit 1     Hidden
- * Bit 2     System
- * Bit 3     Volume Label
- * Bit 4     Directory
- * Bit 5     Archive
- */
-var generateDosExternalFileAttr = function (dosPermissions, isDir) {
-
-    // the dir flag is already set for compatibility
-
-    return (dosPermissions || 0)  & 0x3F;
-};
-
-/**
- * Generate the various parts used in the construction of the final zip file.
- * @param {string} name the file name.
- * @param {ZipObject} file the file content.
- * @param {JSZip.CompressedObject} compressedObject the compressed object.
- * @param {number} offset the current offset from the start of the zip file.
- * @param {String} platform let's pretend we are this platform (change platform dependents fields)
- * @param {Function} encodeFileName the function to encode the file name / comment.
- * @return {object} the zip parts.
- */
-var generateZipParts = function(name, file, compressedObject, offset, platform, encodeFileName) {
-    var data = compressedObject.compressedContent,
-        useCustomEncoding = encodeFileName !== utf8.utf8encode,
-        encodedFileName = utils.transformTo("string", encodeFileName(file.name)),
-        utfEncodedFileName = utils.transformTo("string", utf8.utf8encode(file.name)),
-        comment = file.comment || "",
-        encodedComment = utils.transformTo("string", encodeFileName(comment)),
-        utfEncodedComment = utils.transformTo("string", utf8.utf8encode(comment)),
-        useUTF8ForFileName = utfEncodedFileName.length !== file.name.length,
-        useUTF8ForComment = utfEncodedComment.length !== comment.length,
-        o = file.options,
-        dosTime,
-        dosDate,
-        extraFields = "",
-        unicodePathExtraField = "",
-        unicodeCommentExtraField = "",
-        dir, date;
-
-
-    // handle the deprecated options.dir
-    if (file._initialMetadata.dir !== file.dir) {
-        dir = file.dir;
-    } else {
-        dir = o.dir;
-    }
-
-    // handle the deprecated options.date
-    if(file._initialMetadata.date !== file.date) {
-        date = file.date;
-    } else {
-        date = o.date;
-    }
-
-    var extFileAttr = 0;
-    var versionMadeBy = 0;
-    if (dir) {
-        // dos or unix, we set the dos dir flag
-        extFileAttr |= 0x00010;
-    }
-    if(platform === "UNIX") {
-        versionMadeBy = 0x031E; // UNIX, version 3.0
-        extFileAttr |= generateUnixExternalFileAttr(file.unixPermissions, dir);
-    } else { // DOS or other, fallback to DOS
-        versionMadeBy = 0x0014; // DOS, version 2.0
-        extFileAttr |= generateDosExternalFileAttr(file.dosPermissions, dir);
-    }
-
-    // date
-    // @see http://www.delorie.com/djgpp/doc/rbinter/it/52/13.html
-    // @see http://www.delorie.com/djgpp/doc/rbinter/it/65/16.html
-    // @see http://www.delorie.com/djgpp/doc/rbinter/it/66/16.html
-
-    dosTime = date.getHours();
-    dosTime = dosTime << 6;
-    dosTime = dosTime | date.getMinutes();
-    dosTime = dosTime << 5;
-    dosTime = dosTime | date.getSeconds() / 2;
-
-    dosDate = date.getFullYear() - 1980;
-    dosDate = dosDate << 4;
-    dosDate = dosDate | (date.getMonth() + 1);
-    dosDate = dosDate << 5;
-    dosDate = dosDate | date.getDate();
-
-    if (useUTF8ForFileName) {
-        // set the unicode path extra field. unzip needs at least one extra
-        // field to correctly handle unicode path, so using the path is as good
-        // as any other information. This could improve the situation with
-        // other archive managers too.
-        // This field is usually used without the utf8 flag, with a non
-        // unicode path in the header (winrar, winzip). This helps (a bit)
-        // with the messy Windows' default compressed folders feature but
-        // breaks on p7zip which doesn't seek the unicode path extra field.
-        // So for now, UTF-8 everywhere !
-        unicodePathExtraField =
-            // Version
-            decToHex(1, 1) +
-            // NameCRC32
-            decToHex(crc32(encodedFileName), 4) +
-            // UnicodeName
-            utfEncodedFileName;
-
-        extraFields +=
-            // Info-ZIP Unicode Path Extra Field
-            "\x75\x70" +
-            // size
-            decToHex(unicodePathExtraField.length, 2) +
-            // content
-            unicodePathExtraField;
-    }
-
-    if(useUTF8ForComment) {
-
-        unicodeCommentExtraField =
-            // Version
-            decToHex(1, 1) +
-            // CommentCRC32
-            decToHex(this.crc32(encodedComment), 4) +
-            // UnicodeName
-            utfEncodedComment;
-
-        extraFields +=
-            // Info-ZIP Unicode Path Extra Field
-            "\x75\x63" +
-            // size
-            decToHex(unicodeCommentExtraField.length, 2) +
-            // content
-            unicodeCommentExtraField;
-    }
-
-    var header = "";
-
-    // version needed to extract
-    header += "\x0A\x00";
-    // general purpose bit flag
-    // set bit 11 if utf8
-    header += !useCustomEncoding && (useUTF8ForFileName || useUTF8ForComment) ? "\x00\x08" : "\x00\x00";
-    // compression method
-    header += compressedObject.compressionMethod;
-    // last mod file time
-    header += decToHex(dosTime, 2);
-    // last mod file date
-    header += decToHex(dosDate, 2);
-    // crc-32
-    header += decToHex(compressedObject.crc32, 4);
-    // compressed size
-    header += decToHex(compressedObject.compressedSize, 4);
-    // uncompressed size
-    header += decToHex(compressedObject.uncompressedSize, 4);
-    // file name length
-    header += decToHex(encodedFileName.length, 2);
-    // extra field length
-    header += decToHex(extraFields.length, 2);
-
-
-    var fileRecord = signature.LOCAL_FILE_HEADER + header + encodedFileName + extraFields;
-
-    var dirRecord = signature.CENTRAL_FILE_HEADER +
-    // version made by (00: DOS)
-    decToHex(versionMadeBy, 2) +
-    // file header (common to file and central directory)
-    header +
-    // file comment length
-    decToHex(encodedComment.length, 2) +
-    // disk number start
-    "\x00\x00" +
-    // internal file attributes TODO
-    "\x00\x00" +
-    // external file attributes
-    decToHex(extFileAttr, 4) +
-    // relative offset of local header
-    decToHex(offset, 4) +
-    // file name
-    encodedFileName +
-    // extra field
-    extraFields +
-    // file comment
-    encodedComment;
-
-    return {
-        fileRecord: fileRecord,
-        dirRecord: dirRecord,
-        compressedObject: compressedObject
-    };
-};
-
-
-// return the actual prototype of JSZip
-var out = {
-    /**
-     * Read an existing zip and merge the data in the current JSZip object.
-     * The implementation is in jszip-load.js, don't forget to include it.
-     * @param {String|ArrayBuffer|Uint8Array|Buffer} stream  The stream to load
-     * @param {Object} options Options for loading the stream.
-     *  options.base64 : is the stream in base64 ? default : false
-     * @return {JSZip} the current JSZip object
-     */
-    load: function(stream, options) {
-        throw new Error("Load method is not defined. Is the file jszip-load.js included ?");
-    },
-
-    /**
-     * Filter nested files/folders with the specified function.
-     * @param {Function} search the predicate to use :
-     * function (relativePath, file) {...}
-     * It takes 2 arguments : the relative path and the file.
-     * @return {Array} An array of matching elements.
-     */
-    filter: function(search) {
-        var result = [],
-            filename, relativePath, file, fileClone;
-        for (filename in this.files) {
-            if (!this.files.hasOwnProperty(filename)) {
-                continue;
-            }
-            file = this.files[filename];
-            // return a new object, don't let the user mess with our internal objects :)
-            fileClone = new ZipObject(file.name, file._data, utils.extend(file.options));
-            relativePath = filename.slice(this.root.length, filename.length);
-            if (filename.slice(0, this.root.length) === this.root && // the file is in the current root
-            search(relativePath, fileClone)) { // and the file matches the function
-                result.push(fileClone);
-            }
-        }
-        return result;
-    },
-
-    /**
-     * Add a file to the zip file, or search a file.
-     * @param   {string|RegExp} name The name of the file to add (if data is defined),
-     * the name of the file to find (if no data) or a regex to match files.
-     * @param   {String|ArrayBuffer|Uint8Array|Buffer} data  The file data, either raw or base64 encoded
-     * @param   {Object} o     File options
-     * @return  {JSZip|Object|Array} this JSZip object (when adding a file),
-     * a file (when searching by string) or an array of files (when searching by regex).
-     */
-    file: function(name, data, o) {
-        if (arguments.length === 1) {
-            if (utils.isRegExp(name)) {
-                var regexp = name;
-                return this.filter(function(relativePath, file) {
-                    return !file.dir && regexp.test(relativePath);
-                });
-            }
-            else { // text
-                return this.filter(function(relativePath, file) {
-                    return !file.dir && relativePath === name;
-                })[0] || null;
-            }
-        }
-        else { // more than one argument : we have data !
-            name = this.root + name;
-            fileAdd.call(this, name, data, o);
-        }
-        return this;
-    },
-
-    /**
-     * Add a directory to the zip file, or search.
-     * @param   {String|RegExp} arg The name of the directory to add, or a regex to search folders.
-     * @return  {JSZip} an object with the new directory as the root, or an array containing matching folders.
-     */
-    folder: function(arg) {
-        if (!arg) {
-            return this;
-        }
-
-        if (utils.isRegExp(arg)) {
-            return this.filter(function(relativePath, file) {
-                return file.dir && arg.test(relativePath);
-            });
-        }
-
-        // else, name is a new folder
-        var name = this.root + arg;
-        var newFolder = folderAdd.call(this, name);
-
-        // Allow chaining by returning a new object with this folder as the root
-        var ret = this.clone();
-        ret.root = newFolder.name;
-        return ret;
-    },
-
-    /**
-     * Delete a file, or a directory and all sub-files, from the zip
-     * @param {string} name the name of the file to delete
-     * @return {JSZip} this JSZip object
-     */
-    remove: function(name) {
-        name = this.root + name;
-        var file = this.files[name];
-        if (!file) {
-            // Look for any folders
-            if (name.slice(-1) != "/") {
-                name += "/";
-            }
-            file = this.files[name];
-        }
-
-        if (file && !file.dir) {
-            // file
-            delete this.files[name];
-        } else {
-            // maybe a folder, delete recursively
-            var kids = this.filter(function(relativePath, file) {
-                return file.name.slice(0, name.length) === name;
-            });
-            for (var i = 0; i < kids.length; i++) {
-                delete this.files[kids[i].name];
-            }
-        }
-
-        return this;
-    },
-
-    /**
-     * Generate the complete zip file
-     * @param {Object} options the options to generate the zip file :
-     * - base64, (deprecated, use type instead) true to generate base64.
-     * - compression, "STORE" by default.
-     * - type, "base64" by default. Values are : string, base64, uint8array, arraybuffer, blob.
-     * @return {String|Uint8Array|ArrayBuffer|Buffer|Blob} the zip file
-     */
-    generate: function(options) {
-        options = utils.extend(options || {}, {
-            base64: true,
-            compression: "STORE",
-            compressionOptions : null,
-            type: "base64",
-            platform: "DOS",
-            comment: null,
-            mimeType: 'application/zip',
-            encodeFileName: utf8.utf8encode
-        });
-
-        utils.checkSupport(options.type);
-
-        // accept nodejs `process.platform`
-        if(
-          options.platform === 'darwin' ||
-          options.platform === 'freebsd' ||
-          options.platform === 'linux' ||
-          options.platform === 'sunos'
-        ) {
-          options.platform = "UNIX";
-        }
-        if (options.platform === 'win32') {
-          options.platform = "DOS";
-        }
-
-        var zipData = [],
-            localDirLength = 0,
-            centralDirLength = 0,
-            writer, i,
-            encodedComment = utils.transformTo("string", options.encodeFileName(options.comment || this.comment || ""));
-
-        // first, generate all the zip parts.
-        for (var name in this.files) {
-            if (!this.files.hasOwnProperty(name)) {
-                continue;
-            }
-            var file = this.files[name];
-
-            var compressionName = file.options.compression || options.compression.toUpperCase();
-            var compression = compressions[compressionName];
-            if (!compression) {
-                throw new Error(compressionName + " is not a valid compression method !");
-            }
-            var compressionOptions = file.options.compressionOptions || options.compressionOptions || {};
-
-            var compressedObject = generateCompressedObjectFrom.call(this, file, compression, compressionOptions);
-
-            var zipPart = generateZipParts.call(this, name, file, compressedObject, localDirLength, options.platform, options.encodeFileName);
-            localDirLength += zipPart.fileRecord.length + compressedObject.compressedSize;
-            centralDirLength += zipPart.dirRecord.length;
-            zipData.push(zipPart);
-        }
-
-        var dirEnd = "";
-
-        // end of central dir signature
-        dirEnd = signature.CENTRAL_DIRECTORY_END +
-        // number of this disk
-        "\x00\x00" +
-        // number of the disk with the start of the central directory
-        "\x00\x00" +
-        // total number of entries in the central directory on this disk
-        decToHex(zipData.length, 2) +
-        // total number of entries in the central directory
-        decToHex(zipData.length, 2) +
-        // size of the central directory   4 bytes
-        decToHex(centralDirLength, 4) +
-        // offset of start of central directory with respect to the starting disk number
-        decToHex(localDirLength, 4) +
-        // .ZIP file comment length
-        decToHex(encodedComment.length, 2) +
-        // .ZIP file comment
-        encodedComment;
-
-
-        // we have all the parts (and the total length)
-        // time to create a writer !
-        var typeName = options.type.toLowerCase();
-        if(typeName==="uint8array"||typeName==="arraybuffer"||typeName==="blob"||typeName==="nodebuffer") {
-            writer = new Uint8ArrayWriter(localDirLength + centralDirLength + dirEnd.length);
-        }else{
-            writer = new StringWriter(localDirLength + centralDirLength + dirEnd.length);
-        }
-
-        for (i = 0; i < zipData.length; i++) {
-            writer.append(zipData[i].fileRecord);
-            writer.append(zipData[i].compressedObject.compressedContent);
-        }
-        for (i = 0; i < zipData.length; i++) {
-            writer.append(zipData[i].dirRecord);
-        }
-
-        writer.append(dirEnd);
-
-        var zip = writer.finalize();
-
-
-
-        switch(options.type.toLowerCase()) {
-            // case "zip is an Uint8Array"
-            case "uint8array" :
-            case "arraybuffer" :
-            case "nodebuffer" :
-               return utils.transformTo(options.type.toLowerCase(), zip);
-            case "blob" :
-               return utils.arrayBuffer2Blob(utils.transformTo("arraybuffer", zip), options.mimeType);
-            // case "zip is a string"
-            case "base64" :
-               return (options.base64) ? base64.encode(zip) : zip;
-            default : // case "string" :
-               return zip;
-         }
-
-    },
-
-    /**
-     * @deprecated
-     * This method will be removed in a future version without replacement.
-     */
-    crc32: function (input, crc) {
-        return crc32(input, crc);
-    },
-
-    /**
-     * @deprecated
-     * This method will be removed in a future version without replacement.
-     */
-    utf8encode: function (string) {
-        return utils.transformTo("string", utf8.utf8encode(string));
-    },
-
-    /**
-     * @deprecated
-     * This method will be removed in a future version without replacement.
-     */
-    utf8decode: function (input) {
-        return utf8.utf8decode(input);
-    }
-};
-module.exports = out;
-
-
-/***/ }),
-
-/***/ 1978:
-/***/ ((__unused_webpack_module, exports) => {
-
-
-exports.LOCAL_FILE_HEADER = "PK\x03\x04";
-exports.CENTRAL_FILE_HEADER = "PK\x01\x02";
-exports.CENTRAL_DIRECTORY_END = "PK\x05\x06";
-exports.ZIP64_CENTRAL_DIRECTORY_LOCATOR = "PK\x06\x07";
-exports.ZIP64_CENTRAL_DIRECTORY_END = "PK\x06\x06";
-exports.DATA_DESCRIPTOR = "PK\x07\x08";
-
-
-/***/ }),
-
-/***/ 4352:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
-
-
-var DataReader = __nccwpck_require__(3984);
-var utils = __nccwpck_require__(9600);
-
-function StringReader(data, optimizedBinaryString) {
-    this.data = data;
-    if (!optimizedBinaryString) {
-        this.data = utils.string2binary(this.data);
-    }
-    this.length = this.data.length;
-    this.index = 0;
-    this.zero = 0;
-}
-StringReader.prototype = new DataReader();
-/**
- * @see DataReader.byteAt
- */
-StringReader.prototype.byteAt = function(i) {
-    return this.data.charCodeAt(this.zero + i);
-};
-/**
- * @see DataReader.lastIndexOfSignature
- */
-StringReader.prototype.lastIndexOfSignature = function(sig) {
-    return this.data.lastIndexOf(sig) - this.zero;
-};
-/**
- * @see DataReader.readData
- */
-StringReader.prototype.readData = function(size) {
-    this.checkOffset(size);
-    // this will work because the constructor applied the "& 0xff" mask.
-    var result = this.data.slice(this.zero + this.index, this.zero + this.index + size);
-    this.index += size;
-    return result;
-};
-module.exports = StringReader;
-
-
-/***/ }),
-
-/***/ 5931:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
-
-
-
-var utils = __nccwpck_require__(9600);
-
-/**
- * An object to write any content to a string.
- * @constructor
- */
-var StringWriter = function() {
-    this.data = [];
-};
-StringWriter.prototype = {
-    /**
-     * Append any content to the current string.
-     * @param {Object} input the content to add.
-     */
-    append: function(input) {
-        input = utils.transformTo("string", input);
-        this.data.push(input);
-    },
-    /**
-     * Finalize the construction an return the result.
-     * @return {string} the generated string.
-     */
-    finalize: function() {
-        return this.data.join("");
-    }
-};
-
-module.exports = StringWriter;
-
-
-/***/ }),
-
-/***/ 7294:
-/***/ ((__unused_webpack_module, exports) => {
-
-
-exports.base64 = true;
-exports.array = true;
-exports.string = true;
-exports.arraybuffer = typeof ArrayBuffer !== "undefined" && typeof Uint8Array !== "undefined";
-// contains true if JSZip can read/generate nodejs Buffer, false otherwise.
-// Browserify will provide a Buffer implementation for browsers, which is
-// an augmented Uint8Array (i.e., can be used as either Buffer or U8).
-exports.nodebuffer = typeof Buffer !== "undefined";
-// contains true if JSZip can read/generate Uint8Array, false otherwise.
-exports.uint8array = typeof Uint8Array !== "undefined";
-
-if (typeof ArrayBuffer === "undefined") {
-    exports.blob = false;
-}
-else {
-    var buffer = new ArrayBuffer(0);
+function unwrap(promise, func, value) {
+  immediate(function () {
+    var returnValue;
     try {
-        exports.blob = new Blob([buffer], {
-            type: "application/zip"
-        }).size === 0;
+      returnValue = func(value);
+    } catch (e) {
+      return handlers.reject(promise, e);
     }
-    catch (e) {
-        try {
-            var Builder = window.BlobBuilder || window.WebKitBlobBuilder || window.MozBlobBuilder || window.MSBlobBuilder;
-            var builder = new Builder();
-            builder.append(buffer);
-            exports.blob = builder.getBlob('application/zip').size === 0;
-        }
-        catch (e) {
-            exports.blob = false;
-        }
-    }
-}
-
-
-/***/ }),
-
-/***/ 8485:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
-
-
-var ArrayReader = __nccwpck_require__(4396);
-
-function Uint8ArrayReader(data) {
-    if (data) {
-        this.data = data;
-        this.length = this.data.length;
-        this.index = 0;
-        this.zero = 0;
-    }
-}
-Uint8ArrayReader.prototype = new ArrayReader();
-/**
- * @see DataReader.readData
- */
-Uint8ArrayReader.prototype.readData = function(size) {
-    this.checkOffset(size);
-    if(size === 0) {
-        // in IE10, when using subarray(idx, idx), we get the array [0x00] instead of [].
-        return new Uint8Array(0);
-    }
-    var result = this.data.subarray(this.zero + this.index, this.zero + this.index + size);
-    this.index += size;
-    return result;
-};
-module.exports = Uint8ArrayReader;
-
-
-/***/ }),
-
-/***/ 3317:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
-
-
-
-var utils = __nccwpck_require__(9600);
-
-/**
- * An object to write any content to an Uint8Array.
- * @constructor
- * @param {number} length The length of the array.
- */
-var Uint8ArrayWriter = function(length) {
-    this.data = new Uint8Array(length);
-    this.index = 0;
-};
-Uint8ArrayWriter.prototype = {
-    /**
-     * Append any content to the current array.
-     * @param {Object} input the content to add.
-     */
-    append: function(input) {
-        if (input.length !== 0) {
-            // with an empty Uint8Array, Opera fails with a "Offset larger than array size"
-            input = utils.transformTo("uint8array", input);
-            this.data.set(input, this.index);
-            this.index += input.length;
-        }
-    },
-    /**
-     * Finalize the construction an return the result.
-     * @return {Uint8Array} the generated array.
-     */
-    finalize: function() {
-        return this.data;
-    }
-};
-
-module.exports = Uint8ArrayWriter;
-
-
-/***/ }),
-
-/***/ 9278:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-
-
-var utils = __nccwpck_require__(9600);
-var support = __nccwpck_require__(7294);
-var nodeBuffer = __nccwpck_require__(6214);
-
-/**
- * The following functions come from pako, from pako/lib/utils/strings
- * released under the MIT license, see pako https://github.com/nodeca/pako/
- */
-
-// Table with utf8 lengths (calculated by first byte of sequence)
-// Note, that 5 & 6-byte values and some 4-byte values can not be represented in JS,
-// because max possible codepoint is 0x10ffff
-var _utf8len = new Array(256);
-for (var i=0; i<256; i++) {
-  _utf8len[i] = (i >= 252 ? 6 : i >= 248 ? 5 : i >= 240 ? 4 : i >= 224 ? 3 : i >= 192 ? 2 : 1);
-}
-_utf8len[254]=_utf8len[254]=1; // Invalid sequence start
-
-// convert string to array (typed, when possible)
-var string2buf = function (str) {
-    var buf, c, c2, m_pos, i, str_len = str.length, buf_len = 0;
-
-    // count binary size
-    for (m_pos = 0; m_pos < str_len; m_pos++) {
-        c = str.charCodeAt(m_pos);
-        if ((c & 0xfc00) === 0xd800 && (m_pos+1 < str_len)) {
-            c2 = str.charCodeAt(m_pos+1);
-            if ((c2 & 0xfc00) === 0xdc00) {
-                c = 0x10000 + ((c - 0xd800) << 10) + (c2 - 0xdc00);
-                m_pos++;
-            }
-        }
-        buf_len += c < 0x80 ? 1 : c < 0x800 ? 2 : c < 0x10000 ? 3 : 4;
-    }
-
-    // allocate buffer
-    if (support.uint8array) {
-        buf = new Uint8Array(buf_len);
+    if (returnValue === promise) {
+      handlers.reject(promise, new TypeError('Cannot resolve promise with itself'));
     } else {
-        buf = new Array(buf_len);
+      handlers.resolve(promise, returnValue);
     }
-
-    // convert
-    for (i=0, m_pos = 0; i < buf_len; m_pos++) {
-        c = str.charCodeAt(m_pos);
-        if ((c & 0xfc00) === 0xd800 && (m_pos+1 < str_len)) {
-            c2 = str.charCodeAt(m_pos+1);
-            if ((c2 & 0xfc00) === 0xdc00) {
-                c = 0x10000 + ((c - 0xd800) << 10) + (c2 - 0xdc00);
-                m_pos++;
-            }
-        }
-        if (c < 0x80) {
-            /* one byte */
-            buf[i++] = c;
-        } else if (c < 0x800) {
-            /* two bytes */
-            buf[i++] = 0xC0 | (c >>> 6);
-            buf[i++] = 0x80 | (c & 0x3f);
-        } else if (c < 0x10000) {
-            /* three bytes */
-            buf[i++] = 0xE0 | (c >>> 12);
-            buf[i++] = 0x80 | (c >>> 6 & 0x3f);
-            buf[i++] = 0x80 | (c & 0x3f);
-        } else {
-            /* four bytes */
-            buf[i++] = 0xf0 | (c >>> 18);
-            buf[i++] = 0x80 | (c >>> 12 & 0x3f);
-            buf[i++] = 0x80 | (c >>> 6 & 0x3f);
-            buf[i++] = 0x80 | (c & 0x3f);
-        }
-    }
-
-    return buf;
-};
-
-// Calculate max possible position in utf8 buffer,
-// that will not break sequence. If that's not possible
-// - (very small limits) return max size as is.
-//
-// buf[] - utf8 bytes array
-// max   - length limit (mandatory);
-var utf8border = function(buf, max) {
-    var pos;
-
-    max = max || buf.length;
-    if (max > buf.length) { max = buf.length; }
-
-    // go back from last position, until start of sequence found
-    pos = max-1;
-    while (pos >= 0 && (buf[pos] & 0xC0) === 0x80) { pos--; }
-
-    // Fuckup - very small and broken sequence,
-    // return max, because we should return something anyway.
-    if (pos < 0) { return max; }
-
-    // If we came to start of buffer - that means vuffer is too small,
-    // return max too.
-    if (pos === 0) { return max; }
-
-    return (pos + _utf8len[buf[pos]] > max) ? pos : max;
-};
-
-// convert array to string
-var buf2string = function (buf) {
-    var str, i, out, c, c_len;
-    var len = buf.length;
-
-    // Reserve max possible length (2 words per char)
-    // NB: by unknown reasons, Array is significantly faster for
-    //     String.fromCharCode.apply than Uint16Array.
-    var utf16buf = new Array(len*2);
-
-    for (out=0, i=0; i<len;) {
-        c = buf[i++];
-        // quick process ascii
-        if (c < 0x80) { utf16buf[out++] = c; continue; }
-
-        c_len = _utf8len[c];
-        // skip 5 & 6 byte codes
-        if (c_len > 4) { utf16buf[out++] = 0xfffd; i += c_len-1; continue; }
-
-        // apply mask on first byte
-        c &= c_len === 2 ? 0x1f : c_len === 3 ? 0x0f : 0x07;
-        // join the rest
-        while (c_len > 1 && i < len) {
-            c = (c << 6) | (buf[i++] & 0x3f);
-            c_len--;
-        }
-
-        // terminated by end of string?
-        if (c_len > 1) { utf16buf[out++] = 0xfffd; continue; }
-
-        if (c < 0x10000) {
-            utf16buf[out++] = c;
-        } else {
-            c -= 0x10000;
-            utf16buf[out++] = 0xd800 | ((c >> 10) & 0x3ff);
-            utf16buf[out++] = 0xdc00 | (c & 0x3ff);
-        }
-    }
-
-    // shrinkBuf(utf16buf, out)
-    if (utf16buf.length !== out) {
-        if(utf16buf.subarray) {
-            utf16buf = utf16buf.subarray(0, out);
-        } else {
-            utf16buf.length = out;
-        }
-    }
-
-    // return String.fromCharCode.apply(null, utf16buf);
-    return utils.applyFromCharCode(utf16buf);
-};
-
-
-// That's all for the pako functions.
-
-
-/**
- * Transform a javascript string into an array (typed if possible) of bytes,
- * UTF-8 encoded.
- * @param {String} str the string to encode
- * @return {Array|Uint8Array|Buffer} the UTF-8 encoded string.
- */
-exports.utf8encode = function utf8encode(str) {
-    if (support.nodebuffer) {
-        return nodeBuffer(str, "utf-8");
-    }
-
-    return string2buf(str);
-};
-
-
-/**
- * Transform a bytes array (or a representation) representing an UTF-8 encoded
- * string into a javascript string.
- * @param {Array|Uint8Array|Buffer} buf the data de decode
- * @return {String} the decoded string.
- */
-exports.utf8decode = function utf8decode(buf) {
-    if (support.nodebuffer) {
-        return utils.transformTo("nodebuffer", buf).toString("utf-8");
-    }
-
-    buf = utils.transformTo(support.uint8array ? "uint8array" : "array", buf);
-
-    // return buf2string(buf);
-    // Chrome prefers to work with "small" chunks of data
-    // for the method buf2string.
-    // Firefox and Chrome has their own shortcut, IE doesn't seem to really care.
-    var result = [], k = 0, len = buf.length, chunk = 65536;
-    while (k < len) {
-        var nextBoundary = utf8border(buf, Math.min(k + chunk, len));
-        if (support.uint8array) {
-            result.push(buf2string(buf.subarray(k, nextBoundary)));
-        } else {
-            result.push(buf2string(buf.slice(k, nextBoundary)));
-        }
-        k = nextBoundary;
-    }
-    return result.join("");
-
-};
-// vim: set shiftwidth=4 softtabstop=4:
-
-
-/***/ }),
-
-/***/ 9600:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-
-var support = __nccwpck_require__(7294);
-var compressions = __nccwpck_require__(673);
-var nodeBuffer = __nccwpck_require__(6214);
-/**
- * Convert a string to a "binary string" : a string containing only char codes between 0 and 255.
- * @param {string} str the string to transform.
- * @return {String} the binary string.
- */
-exports.string2binary = function(str) {
-    var result = "";
-    for (var i = 0; i < str.length; i++) {
-        result += String.fromCharCode(str.charCodeAt(i) & 0xff);
-    }
-    return result;
-};
-exports.arrayBuffer2Blob = function(buffer, mimeType) {
-    exports.checkSupport("blob");
-	mimeType = mimeType || 'application/zip';
-
-    try {
-        // Blob constructor
-        return new Blob([buffer], {
-            type: mimeType
-        });
-    }
-    catch (e) {
-
-        try {
-            // deprecated, browser only, old way
-            var Builder = window.BlobBuilder || window.WebKitBlobBuilder || window.MozBlobBuilder || window.MSBlobBuilder;
-            var builder = new Builder();
-            builder.append(buffer);
-            return builder.getBlob(mimeType);
-        }
-        catch (e) {
-
-            // well, fuck ?!
-            throw new Error("Bug : can't construct the Blob.");
-        }
-    }
-
-
-};
-/**
- * The identity function.
- * @param {Object} input the input.
- * @return {Object} the same input.
- */
-function identity(input) {
-    return input;
+  });
 }
 
-/**
- * Fill in an array with a string.
- * @param {String} str the string to use.
- * @param {Array|ArrayBuffer|Uint8Array|Buffer} array the array to fill in (will be mutated).
- * @return {Array|ArrayBuffer|Uint8Array|Buffer} the updated array.
- */
-function stringToArrayLike(str, array) {
-    for (var i = 0; i < str.length; ++i) {
-        array[i] = str.charCodeAt(i) & 0xFF;
+handlers.resolve = function (self, value) {
+  var result = tryCatch(getThen, value);
+  if (result.status === 'error') {
+    return handlers.reject(self, result.value);
+  }
+  var thenable = result.value;
+
+  if (thenable) {
+    safelyResolveThenable(self, thenable);
+  } else {
+    self.state = FULFILLED;
+    self.outcome = value;
+    var i = -1;
+    var len = self.queue.length;
+    while (++i < len) {
+      self.queue[i].callFulfilled(value);
     }
-    return array;
+  }
+  return self;
+};
+handlers.reject = function (self, error) {
+  self.state = REJECTED;
+  self.outcome = error;
+  /* istanbul ignore else */
+  if (!process.browser) {
+    if (self.handled === UNHANDLED) {
+      immediate(function () {
+        if (self.handled === UNHANDLED) {
+          process.emit('unhandledRejection', error, self);
+        }
+      });
+    }
+  }
+  var i = -1;
+  var len = self.queue.length;
+  while (++i < len) {
+    self.queue[i].callRejected(error);
+  }
+  return self;
+};
+
+function getThen(obj) {
+  // Make sure we only access the accessor once as required by the spec
+  var then = obj && obj.then;
+  if (obj && (typeof obj === 'object' || typeof obj === 'function') && typeof then === 'function') {
+    return function appyThen() {
+      then.apply(obj, arguments);
+    };
+  }
 }
 
-/**
- * Transform an array-like object to a string.
- * @param {Array|ArrayBuffer|Uint8Array|Buffer} array the array to transform.
- * @return {String} the result.
- */
-function arrayLikeToString(array) {
-    // Performances notes :
-    // --------------------
-    // String.fromCharCode.apply(null, array) is the fastest, see
-    // see http://jsperf.com/converting-a-uint8array-to-a-string/2
-    // but the stack is limited (and we can get huge arrays !).
-    //
-    // result += String.fromCharCode(array[i]); generate too many strings !
-    //
-    // This code is inspired by http://jsperf.com/arraybuffer-to-string-apply-performance/2
-    var chunk = 65536;
-    var result = [],
-        len = array.length,
-        type = exports.getTypeOf(array),
-        k = 0,
-        canUseApply = true;
-      try {
-         switch(type) {
-            case "uint8array":
-               String.fromCharCode.apply(null, new Uint8Array(0));
-               break;
-            case "nodebuffer":
-               String.fromCharCode.apply(null, nodeBuffer(0));
-               break;
-         }
-      } catch(e) {
-         canUseApply = false;
+function safelyResolveThenable(self, thenable) {
+  // Either fulfill, reject or reject with error
+  var called = false;
+  function onError(value) {
+    if (called) {
+      return;
+    }
+    called = true;
+    handlers.reject(self, value);
+  }
+
+  function onSuccess(value) {
+    if (called) {
+      return;
+    }
+    called = true;
+    handlers.resolve(self, value);
+  }
+
+  function tryToUnwrap() {
+    thenable(onSuccess, onError);
+  }
+
+  var result = tryCatch(tryToUnwrap);
+  if (result.status === 'error') {
+    onError(result.value);
+  }
+}
+
+function tryCatch(func, value) {
+  var out = {};
+  try {
+    out.value = func(value);
+    out.status = 'success';
+  } catch (e) {
+    out.status = 'error';
+    out.value = e;
+  }
+  return out;
+}
+
+Promise.resolve = resolve;
+function resolve(value) {
+  if (value instanceof this) {
+    return value;
+  }
+  return handlers.resolve(new this(INTERNAL), value);
+}
+
+Promise.reject = reject;
+function reject(reason) {
+  var promise = new this(INTERNAL);
+  return handlers.reject(promise, reason);
+}
+
+Promise.all = all;
+function all(iterable) {
+  var self = this;
+  if (Object.prototype.toString.call(iterable) !== '[object Array]') {
+    return this.reject(new TypeError('must be an array'));
+  }
+
+  var len = iterable.length;
+  var called = false;
+  if (!len) {
+    return this.resolve([]);
+  }
+
+  var values = new Array(len);
+  var resolved = 0;
+  var i = -1;
+  var promise = new this(INTERNAL);
+
+  while (++i < len) {
+    allResolver(iterable[i], i);
+  }
+  return promise;
+  function allResolver(value, i) {
+    self.resolve(value).then(resolveFromAll, function (error) {
+      if (!called) {
+        called = true;
+        handlers.reject(promise, error);
       }
-
-      // no apply : slow and painful algorithm
-      // default browser on android 4.*
-      if (!canUseApply) {
-         var resultStr = "";
-         for(var i = 0; i < array.length;i++) {
-            resultStr += String.fromCharCode(array[i]);
-         }
-    return resultStr;
+    });
+    function resolveFromAll(outValue) {
+      values[i] = outValue;
+      if (++resolved === len && !called) {
+        called = true;
+        handlers.resolve(promise, values);
+      }
     }
-    while (k < len && chunk > 1) {
-        try {
-            if (type === "array" || type === "nodebuffer") {
-                result.push(String.fromCharCode.apply(null, array.slice(k, Math.min(k + chunk, len))));
-            }
-            else {
-                result.push(String.fromCharCode.apply(null, array.subarray(k, Math.min(k + chunk, len))));
-            }
-            k += chunk;
-        }
-        catch (e) {
-            chunk = Math.floor(chunk / 2);
-        }
-    }
-    return result.join("");
+  }
 }
 
-exports.applyFromCharCode = arrayLikeToString;
+Promise.race = race;
+function race(iterable) {
+  var self = this;
+  if (Object.prototype.toString.call(iterable) !== '[object Array]') {
+    return this.reject(new TypeError('must be an array'));
+  }
 
+  var len = iterable.length;
+  var called = false;
+  if (!len) {
+    return this.resolve([]);
+  }
 
-/**
- * Copy the data from an array-like to an other array-like.
- * @param {Array|ArrayBuffer|Uint8Array|Buffer} arrayFrom the origin array.
- * @param {Array|ArrayBuffer|Uint8Array|Buffer} arrayTo the destination array which will be mutated.
- * @return {Array|ArrayBuffer|Uint8Array|Buffer} the updated destination array.
- */
-function arrayLikeToArrayLike(arrayFrom, arrayTo) {
-    for (var i = 0; i < arrayFrom.length; i++) {
-        arrayTo[i] = arrayFrom[i];
-    }
-    return arrayTo;
+  var i = -1;
+  var promise = new this(INTERNAL);
+
+  while (++i < len) {
+    resolver(iterable[i]);
+  }
+  return promise;
+  function resolver(value) {
+    self.resolve(value).then(function (response) {
+      if (!called) {
+        called = true;
+        handlers.resolve(promise, response);
+      }
+    }, function (error) {
+      if (!called) {
+        called = true;
+        handlers.reject(promise, error);
+      }
+    });
+  }
 }
-
-// a matrix containing functions to transform everything into everything.
-var transform = {};
-
-// string to ?
-transform["string"] = {
-    "string": identity,
-    "array": function(input) {
-        return stringToArrayLike(input, new Array(input.length));
-    },
-    "arraybuffer": function(input) {
-        return transform["string"]["uint8array"](input).buffer;
-    },
-    "uint8array": function(input) {
-        return stringToArrayLike(input, new Uint8Array(input.length));
-    },
-    "nodebuffer": function(input) {
-        return stringToArrayLike(input, nodeBuffer(input.length));
-    }
-};
-
-// array to ?
-transform["array"] = {
-    "string": arrayLikeToString,
-    "array": identity,
-    "arraybuffer": function(input) {
-        return (new Uint8Array(input)).buffer;
-    },
-    "uint8array": function(input) {
-        return new Uint8Array(input);
-    },
-    "nodebuffer": function(input) {
-        return nodeBuffer(input);
-    }
-};
-
-// arraybuffer to ?
-transform["arraybuffer"] = {
-    "string": function(input) {
-        return arrayLikeToString(new Uint8Array(input));
-    },
-    "array": function(input) {
-        return arrayLikeToArrayLike(new Uint8Array(input), new Array(input.byteLength));
-    },
-    "arraybuffer": identity,
-    "uint8array": function(input) {
-        return new Uint8Array(input);
-    },
-    "nodebuffer": function(input) {
-        return nodeBuffer(new Uint8Array(input));
-    }
-};
-
-// uint8array to ?
-transform["uint8array"] = {
-    "string": arrayLikeToString,
-    "array": function(input) {
-        return arrayLikeToArrayLike(input, new Array(input.length));
-    },
-    "arraybuffer": function(input) {
-        return input.buffer;
-    },
-    "uint8array": identity,
-    "nodebuffer": function(input) {
-        return nodeBuffer(input);
-    }
-};
-
-// nodebuffer to ?
-transform["nodebuffer"] = {
-    "string": arrayLikeToString,
-    "array": function(input) {
-        return arrayLikeToArrayLike(input, new Array(input.length));
-    },
-    "arraybuffer": function(input) {
-        return transform["nodebuffer"]["uint8array"](input).buffer;
-    },
-    "uint8array": function(input) {
-        return arrayLikeToArrayLike(input, new Uint8Array(input.length));
-    },
-    "nodebuffer": identity
-};
-
-/**
- * Transform an input into any type.
- * The supported output type are : string, array, uint8array, arraybuffer, nodebuffer.
- * If no output type is specified, the unmodified input will be returned.
- * @param {String} outputType the output type.
- * @param {String|Array|ArrayBuffer|Uint8Array|Buffer} input the input to convert.
- * @throws {Error} an Error if the browser doesn't support the requested output type.
- */
-exports.transformTo = function(outputType, input) {
-    if (!input) {
-        // undefined, null, etc
-        // an empty string won't harm.
-        input = "";
-    }
-    if (!outputType) {
-        return input;
-    }
-    exports.checkSupport(outputType);
-    var inputType = exports.getTypeOf(input);
-    var result = transform[inputType][outputType](input);
-    return result;
-};
-
-/**
- * Return the type of the input.
- * The type will be in a format valid for JSZip.utils.transformTo : string, array, uint8array, arraybuffer.
- * @param {Object} input the input to identify.
- * @return {String} the (lowercase) type of the input.
- */
-exports.getTypeOf = function(input) {
-    if (typeof input === "string") {
-        return "string";
-    }
-    if (Object.prototype.toString.call(input) === "[object Array]") {
-        return "array";
-    }
-    if (support.nodebuffer && nodeBuffer.test(input)) {
-        return "nodebuffer";
-    }
-    if (support.uint8array && input instanceof Uint8Array) {
-        return "uint8array";
-    }
-    if (support.arraybuffer && input instanceof ArrayBuffer) {
-        return "arraybuffer";
-    }
-};
-
-/**
- * Throw an exception if the type is not supported.
- * @param {String} type the type to check.
- * @throws {Error} an Error if the browser doesn't support the requested type.
- */
-exports.checkSupport = function(type) {
-    var supported = support[type.toLowerCase()];
-    if (!supported) {
-        throw new Error(type + " is not supported by this browser");
-    }
-};
-exports.MAX_VALUE_16BITS = 65535;
-exports.MAX_VALUE_32BITS = -1; // well, "\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF" is parsed as -1
-
-/**
- * Prettify a string read as binary.
- * @param {string} str the string to prettify.
- * @return {string} a pretty string.
- */
-exports.pretty = function(str) {
-    var res = '',
-        code, i;
-    for (i = 0; i < (str || "").length; i++) {
-        code = str.charCodeAt(i);
-        res += '\\x' + (code < 16 ? "0" : "") + code.toString(16).toUpperCase();
-    }
-    return res;
-};
-
-/**
- * Find a compression registered in JSZip.
- * @param {string} compressionMethod the method magic to find.
- * @return {Object|null} the JSZip compression object, null if none found.
- */
-exports.findCompression = function(compressionMethod) {
-    for (var method in compressions) {
-        if (!compressions.hasOwnProperty(method)) {
-            continue;
-        }
-        if (compressions[method].magic === compressionMethod) {
-            return compressions[method];
-        }
-    }
-    return null;
-};
-/**
-* Cross-window, cross-Node-context regular expression detection
-* @param  {Object}  object Anything
-* @return {Boolean}        true if the object is a regular expression,
-* false otherwise
-*/
-exports.isRegExp = function (object) {
-    return Object.prototype.toString.call(object) === "[object RegExp]";
-};
-
-/**
- * Merge the objects passed as parameters into a new one.
- * @private
- * @param {...Object} var_args All objects to merge.
- * @return {Object} a new object with the data of the others.
- */
-exports.extend = function() {
-    var result = {}, i, attr;
-    for (i = 0; i < arguments.length; i++) { // arguments is not enumerable in some browsers
-        for (attr in arguments[i]) {
-            if (arguments[i].hasOwnProperty(attr) && typeof result[attr] === "undefined") {
-                result[attr] = arguments[i][attr];
-            }
-        }
-    }
-    return result;
-};
-
-
-
-/***/ }),
-
-/***/ 444:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
-
-
-var StringReader = __nccwpck_require__(4352);
-var NodeBufferReader = __nccwpck_require__(7418);
-var Uint8ArrayReader = __nccwpck_require__(8485);
-var ArrayReader = __nccwpck_require__(4396);
-var utils = __nccwpck_require__(9600);
-var sig = __nccwpck_require__(1978);
-var ZipEntry = __nccwpck_require__(5113);
-var support = __nccwpck_require__(7294);
-var jszipProto = __nccwpck_require__(3855);
-//  class ZipEntries {{{
-/**
- * All the entries in the zip file.
- * @constructor
- * @param {String|ArrayBuffer|Uint8Array} data the binary stream to load.
- * @param {Object} loadOptions Options for loading the stream.
- */
-function ZipEntries(data, loadOptions) {
-    this.files = [];
-    this.loadOptions = loadOptions;
-    if (data) {
-        this.load(data);
-    }
-}
-ZipEntries.prototype = {
-    /**
-     * Check that the reader is on the speficied signature.
-     * @param {string} expectedSignature the expected signature.
-     * @throws {Error} if it is an other signature.
-     */
-    checkSignature: function(expectedSignature) {
-        var signature = this.reader.readString(4);
-        if (signature !== expectedSignature) {
-            throw new Error("Corrupted zip or bug : unexpected signature " + "(" + utils.pretty(signature) + ", expected " + utils.pretty(expectedSignature) + ")");
-        }
-    },
-    /**
-     * Check if the given signature is at the given index.
-     * @param {number} askedIndex the index to check.
-     * @param {string} expectedSignature the signature to expect.
-     * @return {boolean} true if the signature is here, false otherwise.
-     */
-    isSignature: function(askedIndex, expectedSignature) {
-        var currentIndex = this.reader.index;
-        this.reader.setIndex(askedIndex);
-        var signature = this.reader.readString(4);
-        var result = signature === expectedSignature;
-        this.reader.setIndex(currentIndex);
-        return result;
-    },
-    /**
-     * Read the end of the central directory.
-     */
-    readBlockEndOfCentral: function() {
-        this.diskNumber = this.reader.readInt(2);
-        this.diskWithCentralDirStart = this.reader.readInt(2);
-        this.centralDirRecordsOnThisDisk = this.reader.readInt(2);
-        this.centralDirRecords = this.reader.readInt(2);
-        this.centralDirSize = this.reader.readInt(4);
-        this.centralDirOffset = this.reader.readInt(4);
-
-        this.zipCommentLength = this.reader.readInt(2);
-        // warning : the encoding depends of the system locale
-        // On a linux machine with LANG=en_US.utf8, this field is utf8 encoded.
-        // On a windows machine, this field is encoded with the localized windows code page.
-        var zipComment = this.reader.readData(this.zipCommentLength);
-        var decodeParamType = support.uint8array ? "uint8array" : "array";
-        // To get consistent behavior with the generation part, we will assume that
-        // this is utf8 encoded unless specified otherwise.
-        var decodeContent = utils.transformTo(decodeParamType, zipComment);
-        this.zipComment = this.loadOptions.decodeFileName(decodeContent);
-    },
-    /**
-     * Read the end of the Zip 64 central directory.
-     * Not merged with the method readEndOfCentral :
-     * The end of central can coexist with its Zip64 brother,
-     * I don't want to read the wrong number of bytes !
-     */
-    readBlockZip64EndOfCentral: function() {
-        this.zip64EndOfCentralSize = this.reader.readInt(8);
-        this.versionMadeBy = this.reader.readString(2);
-        this.versionNeeded = this.reader.readInt(2);
-        this.diskNumber = this.reader.readInt(4);
-        this.diskWithCentralDirStart = this.reader.readInt(4);
-        this.centralDirRecordsOnThisDisk = this.reader.readInt(8);
-        this.centralDirRecords = this.reader.readInt(8);
-        this.centralDirSize = this.reader.readInt(8);
-        this.centralDirOffset = this.reader.readInt(8);
-
-        this.zip64ExtensibleData = {};
-        var extraDataSize = this.zip64EndOfCentralSize - 44,
-            index = 0,
-            extraFieldId,
-            extraFieldLength,
-            extraFieldValue;
-        while (index < extraDataSize) {
-            extraFieldId = this.reader.readInt(2);
-            extraFieldLength = this.reader.readInt(4);
-            extraFieldValue = this.reader.readString(extraFieldLength);
-            this.zip64ExtensibleData[extraFieldId] = {
-                id: extraFieldId,
-                length: extraFieldLength,
-                value: extraFieldValue
-            };
-        }
-    },
-    /**
-     * Read the end of the Zip 64 central directory locator.
-     */
-    readBlockZip64EndOfCentralLocator: function() {
-        this.diskWithZip64CentralDirStart = this.reader.readInt(4);
-        this.relativeOffsetEndOfZip64CentralDir = this.reader.readInt(8);
-        this.disksCount = this.reader.readInt(4);
-        if (this.disksCount > 1) {
-            throw new Error("Multi-volumes zip are not supported");
-        }
-    },
-    /**
-     * Read the local files, based on the offset read in the central part.
-     */
-    readLocalFiles: function() {
-        var i, file;
-        for (i = 0; i < this.files.length; i++) {
-            file = this.files[i];
-            this.reader.setIndex(file.localHeaderOffset);
-            this.checkSignature(sig.LOCAL_FILE_HEADER);
-            file.readLocalPart(this.reader);
-            file.handleUTF8();
-            file.processAttributes();
-        }
-    },
-    /**
-     * Read the central directory.
-     */
-    readCentralDir: function() {
-        var file;
-
-        this.reader.setIndex(this.centralDirOffset);
-        while (this.reader.readString(4) === sig.CENTRAL_FILE_HEADER) {
-            file = new ZipEntry({
-                zip64: this.zip64
-            }, this.loadOptions);
-            file.readCentralPart(this.reader);
-            this.files.push(file);
-        }
-
-        if (this.centralDirRecords !== this.files.length) {
-            if (this.centralDirRecords !== 0 && this.files.length === 0) {
-                // We expected some records but couldn't find ANY.
-                // This is really suspicious, as if something went wrong.
-                throw new Error("Corrupted zip or bug: expected " + this.centralDirRecords + " records in central dir, got " + this.files.length);
-            } else {
-                // We found some records but not all.
-                // Something is wrong but we got something for the user: no error here.
-                // console.warn("expected", this.centralDirRecords, "records in central dir, got", this.files.length);
-            }
-        }
-    },
-    /**
-     * Read the end of central directory.
-     */
-    readEndOfCentral: function() {
-        var offset = this.reader.lastIndexOfSignature(sig.CENTRAL_DIRECTORY_END);
-        if (offset < 0) {
-            // Check if the content is a truncated zip or complete garbage.
-            // A "LOCAL_FILE_HEADER" is not required at the beginning (auto
-            // extractible zip for example) but it can give a good hint.
-            // If an ajax request was used without responseType, we will also
-            // get unreadable data.
-            var isGarbage = !this.isSignature(0, sig.LOCAL_FILE_HEADER);
-
-            if (isGarbage) {
-                throw new Error("Can't find end of central directory : is this a zip file ? " +
-                                "If it is, see http://stuk.github.io/jszip/documentation/howto/read_zip.html");
-            } else {
-                throw new Error("Corrupted zip : can't find end of central directory");
-            }
-        }
-        this.reader.setIndex(offset);
-        var endOfCentralDirOffset = offset;
-        this.checkSignature(sig.CENTRAL_DIRECTORY_END);
-        this.readBlockEndOfCentral();
-
-
-        /* extract from the zip spec :
-            4)  If one of the fields in the end of central directory
-                record is too small to hold required data, the field
-                should be set to -1 (0xFFFF or 0xFFFFFFFF) and the
-                ZIP64 format record should be created.
-            5)  The end of central directory record and the
-                Zip64 end of central directory locator record must
-                reside on the same disk when splitting or spanning
-                an archive.
-         */
-        if (this.diskNumber === utils.MAX_VALUE_16BITS || this.diskWithCentralDirStart === utils.MAX_VALUE_16BITS || this.centralDirRecordsOnThisDisk === utils.MAX_VALUE_16BITS || this.centralDirRecords === utils.MAX_VALUE_16BITS || this.centralDirSize === utils.MAX_VALUE_32BITS || this.centralDirOffset === utils.MAX_VALUE_32BITS) {
-            this.zip64 = true;
-
-            /*
-            Warning : the zip64 extension is supported, but ONLY if the 64bits integer read from
-            the zip file can fit into a 32bits integer. This cannot be solved : Javascript represents
-            all numbers as 64-bit double precision IEEE 754 floating point numbers.
-            So, we have 53bits for integers and bitwise operations treat everything as 32bits.
-            see https://developer.mozilla.org/en-US/docs/JavaScript/Reference/Operators/Bitwise_Operators
-            and http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-262.pdf section 8.5
-            */
-
-            // should look for a zip64 EOCD locator
-            offset = this.reader.lastIndexOfSignature(sig.ZIP64_CENTRAL_DIRECTORY_LOCATOR);
-            if (offset < 0) {
-                throw new Error("Corrupted zip : can't find the ZIP64 end of central directory locator");
-            }
-            this.reader.setIndex(offset);
-            this.checkSignature(sig.ZIP64_CENTRAL_DIRECTORY_LOCATOR);
-            this.readBlockZip64EndOfCentralLocator();
-
-            // now the zip64 EOCD record
-            if (!this.isSignature(this.relativeOffsetEndOfZip64CentralDir, sig.ZIP64_CENTRAL_DIRECTORY_END)) {
-                // console.warn("ZIP64 end of central directory not where expected.");
-                this.relativeOffsetEndOfZip64CentralDir = this.reader.lastIndexOfSignature(sig.ZIP64_CENTRAL_DIRECTORY_END);
-                if (this.relativeOffsetEndOfZip64CentralDir < 0) {
-                    throw new Error("Corrupted zip : can't find the ZIP64 end of central directory");
-                }
-            }
-            this.reader.setIndex(this.relativeOffsetEndOfZip64CentralDir);
-            this.checkSignature(sig.ZIP64_CENTRAL_DIRECTORY_END);
-            this.readBlockZip64EndOfCentral();
-        }
-
-        var expectedEndOfCentralDirOffset = this.centralDirOffset + this.centralDirSize;
-        if (this.zip64) {
-            expectedEndOfCentralDirOffset += 20; // end of central dir 64 locator
-            expectedEndOfCentralDirOffset += 12 /* should not include the leading 12 bytes */ + this.zip64EndOfCentralSize;
-        }
-
-        var extraBytes = endOfCentralDirOffset - expectedEndOfCentralDirOffset;
-
-        if (extraBytes > 0) {
-            // console.warn(extraBytes, "extra bytes at beginning or within zipfile");
-            if (this.isSignature(endOfCentralDirOffset, sig.CENTRAL_FILE_HEADER)) {
-                // The offsets seem wrong, but we have something at the specified offset.
-                // So… we keep it.
-            } else {
-                // the offset is wrong, update the "zero" of the reader
-                // this happens if data has been prepended (crx files for example)
-                this.reader.zero = extraBytes;
-            }
-        } else if (extraBytes < 0) {
-            throw new Error("Corrupted zip: missing " + Math.abs(extraBytes) + " bytes.");
-        }
-    },
-    prepareReader: function(data) {
-        var type = utils.getTypeOf(data);
-        utils.checkSupport(type);
-        if (type === "string" && !support.uint8array) {
-            this.reader = new StringReader(data, this.loadOptions.optimizedBinaryString);
-        }
-        else if (type === "nodebuffer") {
-            this.reader = new NodeBufferReader(data);
-        }
-        else if (support.uint8array) {
-            this.reader = new Uint8ArrayReader(utils.transformTo("uint8array", data));
-        } else if (support.array) {
-            this.reader = new ArrayReader(utils.transformTo("array", data));
-        } else {
-            throw new Error("Unexpected error: unsupported type '" + type + "'");
-        }
-    },
-    /**
-     * Read a zip file and create ZipEntries.
-     * @param {String|ArrayBuffer|Uint8Array|Buffer} data the binary string representing a zip file.
-     */
-    load: function(data) {
-        this.prepareReader(data);
-        this.readEndOfCentral();
-        this.readCentralDir();
-        this.readLocalFiles();
-    }
-};
-// }}} end of ZipEntries
-module.exports = ZipEntries;
-
-
-/***/ }),
-
-/***/ 5113:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
-
-
-var StringReader = __nccwpck_require__(4352);
-var utils = __nccwpck_require__(9600);
-var CompressedObject = __nccwpck_require__(2737);
-var jszipProto = __nccwpck_require__(3855);
-var support = __nccwpck_require__(7294);
-
-var MADE_BY_DOS = 0x00;
-var MADE_BY_UNIX = 0x03;
-
-// class ZipEntry {{{
-/**
- * An entry in the zip file.
- * @constructor
- * @param {Object} options Options of the current file.
- * @param {Object} loadOptions Options for loading the stream.
- */
-function ZipEntry(options, loadOptions) {
-    this.options = options;
-    this.loadOptions = loadOptions;
-}
-ZipEntry.prototype = {
-    /**
-     * say if the file is encrypted.
-     * @return {boolean} true if the file is encrypted, false otherwise.
-     */
-    isEncrypted: function() {
-        // bit 1 is set
-        return (this.bitFlag & 0x0001) === 0x0001;
-    },
-    /**
-     * say if the file has utf-8 filename/comment.
-     * @return {boolean} true if the filename/comment is in utf-8, false otherwise.
-     */
-    useUTF8: function() {
-        // bit 11 is set
-        return (this.bitFlag & 0x0800) === 0x0800;
-    },
-    /**
-     * Prepare the function used to generate the compressed content from this ZipFile.
-     * @param {DataReader} reader the reader to use.
-     * @param {number} from the offset from where we should read the data.
-     * @param {number} length the length of the data to read.
-     * @return {Function} the callback to get the compressed content (the type depends of the DataReader class).
-     */
-    prepareCompressedContent: function(reader, from, length) {
-        return function() {
-            var previousIndex = reader.index;
-            reader.setIndex(from);
-            var compressedFileData = reader.readData(length);
-            reader.setIndex(previousIndex);
-
-            return compressedFileData;
-        };
-    },
-    /**
-     * Prepare the function used to generate the uncompressed content from this ZipFile.
-     * @param {DataReader} reader the reader to use.
-     * @param {number} from the offset from where we should read the data.
-     * @param {number} length the length of the data to read.
-     * @param {JSZip.compression} compression the compression used on this file.
-     * @param {number} uncompressedSize the uncompressed size to expect.
-     * @return {Function} the callback to get the uncompressed content (the type depends of the DataReader class).
-     */
-    prepareContent: function(reader, from, length, compression, uncompressedSize) {
-        return function() {
-
-            var compressedFileData = utils.transformTo(compression.uncompressInputType, this.getCompressedContent());
-            var uncompressedFileData = compression.uncompress(compressedFileData);
-
-            if (uncompressedFileData.length !== uncompressedSize) {
-                throw new Error("Bug : uncompressed data size mismatch");
-            }
-
-            return uncompressedFileData;
-        };
-    },
-    /**
-     * Read the local part of a zip file and add the info in this object.
-     * @param {DataReader} reader the reader to use.
-     */
-    readLocalPart: function(reader) {
-        var compression, localExtraFieldsLength;
-
-        // we already know everything from the central dir !
-        // If the central dir data are false, we are doomed.
-        // On the bright side, the local part is scary  : zip64, data descriptors, both, etc.
-        // The less data we get here, the more reliable this should be.
-        // Let's skip the whole header and dash to the data !
-        reader.skip(22);
-        // in some zip created on windows, the filename stored in the central dir contains \ instead of /.
-        // Strangely, the filename here is OK.
-        // I would love to treat these zip files as corrupted (see http://www.info-zip.org/FAQ.html#backslashes
-        // or APPNOTE#4.4.17.1, "All slashes MUST be forward slashes '/'") but there are a lot of bad zip generators...
-        // Search "unzip mismatching "local" filename continuing with "central" filename version" on
-        // the internet.
-        //
-        // I think I see the logic here : the central directory is used to display
-        // content and the local directory is used to extract the files. Mixing / and \
-        // may be used to display \ to windows users and use / when extracting the files.
-        // Unfortunately, this lead also to some issues : http://seclists.org/fulldisclosure/2009/Sep/394
-        this.fileNameLength = reader.readInt(2);
-        localExtraFieldsLength = reader.readInt(2); // can't be sure this will be the same as the central dir
-        this.fileName = reader.readData(this.fileNameLength);
-        reader.skip(localExtraFieldsLength);
-
-        if (this.compressedSize == -1 || this.uncompressedSize == -1) {
-            throw new Error("Bug or corrupted zip : didn't get enough informations from the central directory " + "(compressedSize == -1 || uncompressedSize == -1)");
-        }
-
-        compression = utils.findCompression(this.compressionMethod);
-        if (compression === null) { // no compression found
-            throw new Error("Corrupted zip : compression " + utils.pretty(this.compressionMethod) + " unknown (inner file : " +  utils.transformTo("string", this.fileName) + ")");
-        }
-        this.decompressed = new CompressedObject();
-        this.decompressed.compressedSize = this.compressedSize;
-        this.decompressed.uncompressedSize = this.uncompressedSize;
-        this.decompressed.crc32 = this.crc32;
-        this.decompressed.compressionMethod = this.compressionMethod;
-        this.decompressed.getCompressedContent = this.prepareCompressedContent(reader, reader.index, this.compressedSize, compression);
-        this.decompressed.getContent = this.prepareContent(reader, reader.index, this.compressedSize, compression, this.uncompressedSize);
-
-        // we need to compute the crc32...
-        if (this.loadOptions.checkCRC32) {
-            this.decompressed = utils.transformTo("string", this.decompressed.getContent());
-            if (jszipProto.crc32(this.decompressed) !== this.crc32) {
-                throw new Error("Corrupted zip : CRC32 mismatch");
-            }
-        }
-    },
-
-    /**
-     * Read the central part of a zip file and add the info in this object.
-     * @param {DataReader} reader the reader to use.
-     */
-    readCentralPart: function(reader) {
-        this.versionMadeBy = reader.readInt(2);
-        this.versionNeeded = reader.readInt(2);
-        this.bitFlag = reader.readInt(2);
-        this.compressionMethod = reader.readString(2);
-        this.date = reader.readDate();
-        this.crc32 = reader.readInt(4);
-        this.compressedSize = reader.readInt(4);
-        this.uncompressedSize = reader.readInt(4);
-        this.fileNameLength = reader.readInt(2);
-        this.extraFieldsLength = reader.readInt(2);
-        this.fileCommentLength = reader.readInt(2);
-        this.diskNumberStart = reader.readInt(2);
-        this.internalFileAttributes = reader.readInt(2);
-        this.externalFileAttributes = reader.readInt(4);
-        this.localHeaderOffset = reader.readInt(4);
-
-        if (this.isEncrypted()) {
-            throw new Error("Encrypted zip are not supported");
-        }
-
-        this.fileName = reader.readData(this.fileNameLength);
-        this.readExtraFields(reader);
-        this.parseZIP64ExtraField(reader);
-        this.fileComment = reader.readData(this.fileCommentLength);
-    },
-
-    /**
-     * Parse the external file attributes and get the unix/dos permissions.
-     */
-    processAttributes: function () {
-        this.unixPermissions = null;
-        this.dosPermissions = null;
-        var madeBy = this.versionMadeBy >> 8;
-
-        // Check if we have the DOS directory flag set.
-        // We look for it in the DOS and UNIX permissions
-        // but some unknown platform could set it as a compatibility flag.
-        this.dir = this.externalFileAttributes & 0x0010 ? true : false;
-
-        if(madeBy === MADE_BY_DOS) {
-            // first 6 bits (0 to 5)
-            this.dosPermissions = this.externalFileAttributes & 0x3F;
-        }
-
-        if(madeBy === MADE_BY_UNIX) {
-            this.unixPermissions = (this.externalFileAttributes >> 16) & 0xFFFF;
-            // the octal permissions are in (this.unixPermissions & 0x01FF).toString(8);
-        }
-
-        // fail safe : if the name ends with a / it probably means a folder
-        if (!this.dir && this.fileNameStr.slice(-1) === '/') {
-            this.dir = true;
-        }
-    },
-
-    /**
-     * Parse the ZIP64 extra field and merge the info in the current ZipEntry.
-     * @param {DataReader} reader the reader to use.
-     */
-    parseZIP64ExtraField: function(reader) {
-
-        if (!this.extraFields[0x0001]) {
-            return;
-        }
-
-        // should be something, preparing the extra reader
-        var extraReader = new StringReader(this.extraFields[0x0001].value);
-
-        // I really hope that these 64bits integer can fit in 32 bits integer, because js
-        // won't let us have more.
-        if (this.uncompressedSize === utils.MAX_VALUE_32BITS) {
-            this.uncompressedSize = extraReader.readInt(8);
-        }
-        if (this.compressedSize === utils.MAX_VALUE_32BITS) {
-            this.compressedSize = extraReader.readInt(8);
-        }
-        if (this.localHeaderOffset === utils.MAX_VALUE_32BITS) {
-            this.localHeaderOffset = extraReader.readInt(8);
-        }
-        if (this.diskNumberStart === utils.MAX_VALUE_32BITS) {
-            this.diskNumberStart = extraReader.readInt(4);
-        }
-    },
-    /**
-     * Read the central part of a zip file and add the info in this object.
-     * @param {DataReader} reader the reader to use.
-     */
-    readExtraFields: function(reader) {
-        var start = reader.index,
-            extraFieldId,
-            extraFieldLength,
-            extraFieldValue;
-
-        this.extraFields = this.extraFields || {};
-
-        while (reader.index < start + this.extraFieldsLength) {
-            extraFieldId = reader.readInt(2);
-            extraFieldLength = reader.readInt(2);
-            extraFieldValue = reader.readString(extraFieldLength);
-
-            this.extraFields[extraFieldId] = {
-                id: extraFieldId,
-                length: extraFieldLength,
-                value: extraFieldValue
-            };
-        }
-    },
-    /**
-     * Apply an UTF8 transformation if needed.
-     */
-    handleUTF8: function() {
-        var decodeParamType = support.uint8array ? "uint8array" : "array";
-        if (this.useUTF8()) {
-            this.fileNameStr = jszipProto.utf8decode(this.fileName);
-            this.fileCommentStr = jszipProto.utf8decode(this.fileComment);
-        } else {
-            var upath = this.findExtraFieldUnicodePath();
-            if (upath !== null) {
-                this.fileNameStr = upath;
-            } else {
-                var fileNameByteArray =  utils.transformTo(decodeParamType, this.fileName);
-                this.fileNameStr = this.loadOptions.decodeFileName(fileNameByteArray);
-            }
-
-            var ucomment = this.findExtraFieldUnicodeComment();
-            if (ucomment !== null) {
-                this.fileCommentStr = ucomment;
-            } else {
-                var commentByteArray =  utils.transformTo(decodeParamType, this.fileComment);
-                this.fileCommentStr = this.loadOptions.decodeFileName(commentByteArray);
-            }
-        }
-    },
-
-    /**
-     * Find the unicode path declared in the extra field, if any.
-     * @return {String} the unicode path, null otherwise.
-     */
-    findExtraFieldUnicodePath: function() {
-        var upathField = this.extraFields[0x7075];
-        if (upathField) {
-            var extraReader = new StringReader(upathField.value);
-
-            // wrong version
-            if (extraReader.readInt(1) !== 1) {
-                return null;
-            }
-
-            // the crc of the filename changed, this field is out of date.
-            if (jszipProto.crc32(this.fileName) !== extraReader.readInt(4)) {
-                return null;
-            }
-
-            return jszipProto.utf8decode(extraReader.readString(upathField.length - 5));
-        }
-        return null;
-    },
-
-    /**
-     * Find the unicode comment declared in the extra field, if any.
-     * @return {String} the unicode comment, null otherwise.
-     */
-    findExtraFieldUnicodeComment: function() {
-        var ucommentField = this.extraFields[0x6375];
-        if (ucommentField) {
-            var extraReader = new StringReader(ucommentField.value);
-
-            // wrong version
-            if (extraReader.readInt(1) !== 1) {
-                return null;
-            }
-
-            // the crc of the comment changed, this field is out of date.
-            if (jszipProto.crc32(this.fileComment) !== extraReader.readInt(4)) {
-                return null;
-            }
-
-            return jszipProto.utf8decode(extraReader.readString(ucommentField.length - 5));
-        }
-        return null;
-    }
-};
-module.exports = ZipEntry;
 
 
 /***/ }),
@@ -22120,2055 +17455,2767 @@ module.exports = ZStream;
 
 /***/ }),
 
-/***/ 8236:
+/***/ 2927:
 /***/ ((module) => {
 
-// vim:ts=4:sts=4:sw=4:
-/*!
- *
- * Copyright 2009-2017 Kris Kowal under the terms of the MIT
- * license found at https://github.com/kriskowal/q/blob/v1/LICENSE
- *
- * With parts by Tyler Close
- * Copyright 2007-2009 Tyler Close under the terms of the MIT X license found
- * at http://www.opensource.org/licenses/mit-license.html
- * Forked at ref_send.js version: 2009-05-11
- *
- * With parts by Mark Miller
- * Copyright (C) 2011 Google Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- */
 
-(function (definition) {
-    "use strict";
 
-    // This file will function properly as a <script> tag, or a module
-    // using CommonJS and NodeJS or RequireJS module formats.  In
-    // Common/Node/RequireJS, the module exports the Q API and when
-    // executed as a simple <script>, it creates a Q global instead.
-
-    // Montage Require
-    if (typeof bootstrap === "function") {
-        bootstrap("promise", definition);
-
-    // CommonJS
-    } else if (true) {
-        module.exports = definition();
-
-    // RequireJS
-    } else { var previousQ, global; }
-
-})(function () {
-"use strict";
-
-var hasStacks = false;
-try {
-    throw new Error();
-} catch (e) {
-    hasStacks = !!e.stack;
-}
-
-// All code after this point will be filtered from stack traces reported
-// by Q.
-var qStartingLine = captureLine();
-var qFileName;
-
-// shims
-
-// used for fallback in "allResolved"
-var noop = function () {};
-
-// Use the fastest possible means to execute a task in a future turn
-// of the event loop.
-var nextTick =(function () {
-    // linked list of tasks (single, with head node)
-    var head = {task: void 0, next: null};
-    var tail = head;
-    var flushing = false;
-    var requestTick = void 0;
-    var isNodeJS = false;
-    // queue for late tasks, used by unhandled rejection tracking
-    var laterQueue = [];
-
-    function flush() {
-        /* jshint loopfunc: true */
-        var task, domain;
-
-        while (head.next) {
-            head = head.next;
-            task = head.task;
-            head.task = void 0;
-            domain = head.domain;
-
-            if (domain) {
-                head.domain = void 0;
-                domain.enter();
-            }
-            runSingle(task, domain);
-
-        }
-        while (laterQueue.length) {
-            task = laterQueue.pop();
-            runSingle(task);
-        }
-        flushing = false;
-    }
-    // runs a single function in the async queue
-    function runSingle(task, domain) {
-        try {
-            task();
-
-        } catch (e) {
-            if (isNodeJS) {
-                // In node, uncaught exceptions are considered fatal errors.
-                // Re-throw them synchronously to interrupt flushing!
-
-                // Ensure continuation if the uncaught exception is suppressed
-                // listening "uncaughtException" events (as domains does).
-                // Continue in next event to avoid tick recursion.
-                if (domain) {
-                    domain.exit();
-                }
-                setTimeout(flush, 0);
-                if (domain) {
-                    domain.enter();
-                }
-
-                throw e;
-
-            } else {
-                // In browsers, uncaught exceptions are not fatal.
-                // Re-throw them asynchronously to avoid slow-downs.
-                setTimeout(function () {
-                    throw e;
-                }, 0);
-            }
-        }
-
-        if (domain) {
-            domain.exit();
-        }
-    }
-
-    nextTick = function (task) {
-        tail = tail.next = {
-            task: task,
-            domain: isNodeJS && process.domain,
-            next: null
-        };
-
-        if (!flushing) {
-            flushing = true;
-            requestTick();
-        }
-    };
-
-    if (typeof process === "object" &&
-        process.toString() === "[object process]" && process.nextTick) {
-        // Ensure Q is in a real Node environment, with a `process.nextTick`.
-        // To see through fake Node environments:
-        // * Mocha test runner - exposes a `process` global without a `nextTick`
-        // * Browserify - exposes a `process.nexTick` function that uses
-        //   `setTimeout`. In this case `setImmediate` is preferred because
-        //    it is faster. Browserify's `process.toString()` yields
-        //   "[object Object]", while in a real Node environment
-        //   `process.toString()` yields "[object process]".
-        isNodeJS = true;
-
-        requestTick = function () {
-            process.nextTick(flush);
-        };
-
-    } else if (typeof setImmediate === "function") {
-        // In IE10, Node.js 0.9+, or https://github.com/NobleJS/setImmediate
-        if (typeof window !== "undefined") {
-            requestTick = setImmediate.bind(window, flush);
-        } else {
-            requestTick = function () {
-                setImmediate(flush);
-            };
-        }
-
-    } else if (typeof MessageChannel !== "undefined") {
-        // modern browsers
-        // http://www.nonblocking.io/2011/06/windownexttick.html
-        var channel = new MessageChannel();
-        // At least Safari Version 6.0.5 (8536.30.1) intermittently cannot create
-        // working message ports the first time a page loads.
-        channel.port1.onmessage = function () {
-            requestTick = requestPortTick;
-            channel.port1.onmessage = flush;
-            flush();
-        };
-        var requestPortTick = function () {
-            // Opera requires us to provide a message payload, regardless of
-            // whether we use it.
-            channel.port2.postMessage(0);
-        };
-        requestTick = function () {
-            setTimeout(flush, 0);
-            requestPortTick();
-        };
-
-    } else {
-        // old browsers
-        requestTick = function () {
-            setTimeout(flush, 0);
-        };
-    }
-    // runs a task after all other tasks have been run
-    // this is useful for unhandled rejection tracking that needs to happen
-    // after all `then`d tasks have been run.
-    nextTick.runAfter = function (task) {
-        laterQueue.push(task);
-        if (!flushing) {
-            flushing = true;
-            requestTick();
-        }
-    };
-    return nextTick;
-})();
-
-// Attempt to make generics safe in the face of downstream
-// modifications.
-// There is no situation where this is necessary.
-// If you need a security guarantee, these primordials need to be
-// deeply frozen anyway, and if you don’t need a security guarantee,
-// this is just plain paranoid.
-// However, this **might** have the nice side-effect of reducing the size of
-// the minified code by reducing x.call() to merely x()
-// See Mark Miller’s explanation of what this does.
-// http://wiki.ecmascript.org/doku.php?id=conventions:safe_meta_programming
-var call = Function.call;
-function uncurryThis(f) {
-    return function () {
-        return call.apply(f, arguments);
-    };
-}
-// This is equivalent, but slower:
-// uncurryThis = Function_bind.bind(Function_bind.call);
-// http://jsperf.com/uncurrythis
-
-var array_slice = uncurryThis(Array.prototype.slice);
-
-var array_reduce = uncurryThis(
-    Array.prototype.reduce || function (callback, basis) {
-        var index = 0,
-            length = this.length;
-        // concerning the initial value, if one is not provided
-        if (arguments.length === 1) {
-            // seek to the first value in the array, accounting
-            // for the possibility that is is a sparse array
-            do {
-                if (index in this) {
-                    basis = this[index++];
-                    break;
-                }
-                if (++index >= length) {
-                    throw new TypeError();
-                }
-            } while (1);
-        }
-        // reduce
-        for (; index < length; index++) {
-            // account for the possibility that the array is sparse
-            if (index in this) {
-                basis = callback(basis, this[index], index);
-            }
-        }
-        return basis;
-    }
-);
-
-var array_indexOf = uncurryThis(
-    Array.prototype.indexOf || function (value) {
-        // not a very good shim, but good enough for our one use of it
-        for (var i = 0; i < this.length; i++) {
-            if (this[i] === value) {
-                return i;
-            }
-        }
-        return -1;
-    }
-);
-
-var array_map = uncurryThis(
-    Array.prototype.map || function (callback, thisp) {
-        var self = this;
-        var collect = [];
-        array_reduce(self, function (undefined, value, index) {
-            collect.push(callback.call(thisp, value, index, self));
-        }, void 0);
-        return collect;
-    }
-);
-
-var object_create = Object.create || function (prototype) {
-    function Type() { }
-    Type.prototype = prototype;
-    return new Type();
-};
-
-var object_defineProperty = Object.defineProperty || function (obj, prop, descriptor) {
-    obj[prop] = descriptor.value;
-    return obj;
-};
-
-var object_hasOwnProperty = uncurryThis(Object.prototype.hasOwnProperty);
-
-var object_keys = Object.keys || function (object) {
-    var keys = [];
-    for (var key in object) {
-        if (object_hasOwnProperty(object, key)) {
-            keys.push(key);
-        }
-    }
-    return keys;
-};
-
-var object_toString = uncurryThis(Object.prototype.toString);
-
-function isObject(value) {
-    return value === Object(value);
-}
-
-// generator related shims
-
-// FIXME: Remove this function once ES6 generators are in SpiderMonkey.
-function isStopIteration(exception) {
-    return (
-        object_toString(exception) === "[object StopIteration]" ||
-        exception instanceof QReturnValue
-    );
-}
-
-// FIXME: Remove this helper and Q.return once ES6 generators are in
-// SpiderMonkey.
-var QReturnValue;
-if (typeof ReturnValue !== "undefined") {
-    QReturnValue = ReturnValue;
+if (typeof process === 'undefined' ||
+    !process.version ||
+    process.version.indexOf('v0.') === 0 ||
+    process.version.indexOf('v1.') === 0 && process.version.indexOf('v1.8.') !== 0) {
+  module.exports = { nextTick: nextTick };
 } else {
-    QReturnValue = function (value) {
-        this.value = value;
-    };
+  module.exports = process
 }
 
-// long stack traces
-
-var STACK_JUMP_SEPARATOR = "From previous event:";
-
-function makeStackTraceLong(error, promise) {
-    // If possible, transform the error stack trace by removing Node and Q
-    // cruft, then concatenating with the stack trace of `promise`. See #57.
-    if (hasStacks &&
-        promise.stack &&
-        typeof error === "object" &&
-        error !== null &&
-        error.stack
-    ) {
-        var stacks = [];
-        for (var p = promise; !!p; p = p.source) {
-            if (p.stack && (!error.__minimumStackCounter__ || error.__minimumStackCounter__ > p.stackCounter)) {
-                object_defineProperty(error, "__minimumStackCounter__", {value: p.stackCounter, configurable: true});
-                stacks.unshift(p.stack);
-            }
-        }
-        stacks.unshift(error.stack);
-
-        var concatedStacks = stacks.join("\n" + STACK_JUMP_SEPARATOR + "\n");
-        var stack = filterStackString(concatedStacks);
-        object_defineProperty(error, "stack", {value: stack, configurable: true});
-    }
-}
-
-function filterStackString(stackString) {
-    var lines = stackString.split("\n");
-    var desiredLines = [];
-    for (var i = 0; i < lines.length; ++i) {
-        var line = lines[i];
-
-        if (!isInternalFrame(line) && !isNodeFrame(line) && line) {
-            desiredLines.push(line);
-        }
-    }
-    return desiredLines.join("\n");
-}
-
-function isNodeFrame(stackLine) {
-    return stackLine.indexOf("(module.js:") !== -1 ||
-           stackLine.indexOf("(node.js:") !== -1;
-}
-
-function getFileNameAndLineNumber(stackLine) {
-    // Named functions: "at functionName (filename:lineNumber:columnNumber)"
-    // In IE10 function name can have spaces ("Anonymous function") O_o
-    var attempt1 = /at .+ \((.+):(\d+):(?:\d+)\)$/.exec(stackLine);
-    if (attempt1) {
-        return [attempt1[1], Number(attempt1[2])];
-    }
-
-    // Anonymous functions: "at filename:lineNumber:columnNumber"
-    var attempt2 = /at ([^ ]+):(\d+):(?:\d+)$/.exec(stackLine);
-    if (attempt2) {
-        return [attempt2[1], Number(attempt2[2])];
-    }
-
-    // Firefox style: "function@filename:lineNumber or @filename:lineNumber"
-    var attempt3 = /.*@(.+):(\d+)$/.exec(stackLine);
-    if (attempt3) {
-        return [attempt3[1], Number(attempt3[2])];
-    }
-}
-
-function isInternalFrame(stackLine) {
-    var fileNameAndLineNumber = getFileNameAndLineNumber(stackLine);
-
-    if (!fileNameAndLineNumber) {
-        return false;
-    }
-
-    var fileName = fileNameAndLineNumber[0];
-    var lineNumber = fileNameAndLineNumber[1];
-
-    return fileName === qFileName &&
-        lineNumber >= qStartingLine &&
-        lineNumber <= qEndingLine;
-}
-
-// discover own file name and line number range for filtering stack
-// traces
-function captureLine() {
-    if (!hasStacks) {
-        return;
-    }
-
-    try {
-        throw new Error();
-    } catch (e) {
-        var lines = e.stack.split("\n");
-        var firstLine = lines[0].indexOf("@") > 0 ? lines[1] : lines[2];
-        var fileNameAndLineNumber = getFileNameAndLineNumber(firstLine);
-        if (!fileNameAndLineNumber) {
-            return;
-        }
-
-        qFileName = fileNameAndLineNumber[0];
-        return fileNameAndLineNumber[1];
-    }
-}
-
-function deprecate(callback, name, alternative) {
-    return function () {
-        if (typeof console !== "undefined" &&
-            typeof console.warn === "function") {
-            console.warn(name + " is deprecated, use " + alternative +
-                         " instead.", new Error("").stack);
-        }
-        return callback.apply(callback, arguments);
-    };
-}
-
-// end of shims
-// beginning of real work
-
-/**
- * Constructs a promise for an immediate reference, passes promises through, or
- * coerces promises from different systems.
- * @param value immediate reference or promise
- */
-function Q(value) {
-    // If the object is already a Promise, return it directly.  This enables
-    // the resolve function to both be used to created references from objects,
-    // but to tolerably coerce non-promises to promises.
-    if (value instanceof Promise) {
-        return value;
-    }
-
-    // assimilate thenables
-    if (isPromiseAlike(value)) {
-        return coerce(value);
-    } else {
-        return fulfill(value);
-    }
-}
-Q.resolve = Q;
-
-/**
- * Performs a task in a future turn of the event loop.
- * @param {Function} task
- */
-Q.nextTick = nextTick;
-
-/**
- * Controls whether or not long stack traces will be on
- */
-Q.longStackSupport = false;
-
-/**
- * The counter is used to determine the stopping point for building
- * long stack traces. In makeStackTraceLong we walk backwards through
- * the linked list of promises, only stacks which were created before
- * the rejection are concatenated.
- */
-var longStackCounter = 1;
-
-// enable long stacks if Q_DEBUG is set
-if (typeof process === "object" && process && process.env && process.env.Q_DEBUG) {
-    Q.longStackSupport = true;
-}
-
-/**
- * Constructs a {promise, resolve, reject} object.
- *
- * `resolve` is a callback to invoke with a more resolved value for the
- * promise. To fulfill the promise, invoke `resolve` with any value that is
- * not a thenable. To reject the promise, invoke `resolve` with a rejected
- * thenable, or invoke `reject` with the reason directly. To resolve the
- * promise to another thenable, thus putting it in the same state, invoke
- * `resolve` with that other thenable.
- */
-Q.defer = defer;
-function defer() {
-    // if "messages" is an "Array", that indicates that the promise has not yet
-    // been resolved.  If it is "undefined", it has been resolved.  Each
-    // element of the messages array is itself an array of complete arguments to
-    // forward to the resolved promise.  We coerce the resolution value to a
-    // promise using the `resolve` function because it handles both fully
-    // non-thenable values and other thenables gracefully.
-    var messages = [], progressListeners = [], resolvedPromise;
-
-    var deferred = object_create(defer.prototype);
-    var promise = object_create(Promise.prototype);
-
-    promise.promiseDispatch = function (resolve, op, operands) {
-        var args = array_slice(arguments);
-        if (messages) {
-            messages.push(args);
-            if (op === "when" && operands[1]) { // progress operand
-                progressListeners.push(operands[1]);
-            }
-        } else {
-            Q.nextTick(function () {
-                resolvedPromise.promiseDispatch.apply(resolvedPromise, args);
-            });
-        }
-    };
-
-    // XXX deprecated
-    promise.valueOf = function () {
-        if (messages) {
-            return promise;
-        }
-        var nearerValue = nearer(resolvedPromise);
-        if (isPromise(nearerValue)) {
-            resolvedPromise = nearerValue; // shorten chain
-        }
-        return nearerValue;
-    };
-
-    promise.inspect = function () {
-        if (!resolvedPromise) {
-            return { state: "pending" };
-        }
-        return resolvedPromise.inspect();
-    };
-
-    if (Q.longStackSupport && hasStacks) {
-        try {
-            throw new Error();
-        } catch (e) {
-            // NOTE: don't try to use `Error.captureStackTrace` or transfer the
-            // accessor around; that causes memory leaks as per GH-111. Just
-            // reify the stack trace as a string ASAP.
-            //
-            // At the same time, cut off the first line; it's always just
-            // "[object Promise]\n", as per the `toString`.
-            promise.stack = e.stack.substring(e.stack.indexOf("\n") + 1);
-            promise.stackCounter = longStackCounter++;
-        }
-    }
-
-    // NOTE: we do the checks for `resolvedPromise` in each method, instead of
-    // consolidating them into `become`, since otherwise we'd create new
-    // promises with the lines `become(whatever(value))`. See e.g. GH-252.
-
-    function become(newPromise) {
-        resolvedPromise = newPromise;
-
-        if (Q.longStackSupport && hasStacks) {
-            // Only hold a reference to the new promise if long stacks
-            // are enabled to reduce memory usage
-            promise.source = newPromise;
-        }
-
-        array_reduce(messages, function (undefined, message) {
-            Q.nextTick(function () {
-                newPromise.promiseDispatch.apply(newPromise, message);
-            });
-        }, void 0);
-
-        messages = void 0;
-        progressListeners = void 0;
-    }
-
-    deferred.promise = promise;
-    deferred.resolve = function (value) {
-        if (resolvedPromise) {
-            return;
-        }
-
-        become(Q(value));
-    };
-
-    deferred.fulfill = function (value) {
-        if (resolvedPromise) {
-            return;
-        }
-
-        become(fulfill(value));
-    };
-    deferred.reject = function (reason) {
-        if (resolvedPromise) {
-            return;
-        }
-
-        become(reject(reason));
-    };
-    deferred.notify = function (progress) {
-        if (resolvedPromise) {
-            return;
-        }
-
-        array_reduce(progressListeners, function (undefined, progressListener) {
-            Q.nextTick(function () {
-                progressListener(progress);
-            });
-        }, void 0);
-    };
-
-    return deferred;
-}
-
-/**
- * Creates a Node-style callback that will resolve or reject the deferred
- * promise.
- * @returns a nodeback
- */
-defer.prototype.makeNodeResolver = function () {
-    var self = this;
-    return function (error, value) {
-        if (error) {
-            self.reject(error);
-        } else if (arguments.length > 2) {
-            self.resolve(array_slice(arguments, 1));
-        } else {
-            self.resolve(value);
-        }
-    };
-};
-
-/**
- * @param resolver {Function} a function that returns nothing and accepts
- * the resolve, reject, and notify functions for a deferred.
- * @returns a promise that may be resolved with the given resolve and reject
- * functions, or rejected by a thrown exception in resolver
- */
-Q.Promise = promise; // ES6
-Q.promise = promise;
-function promise(resolver) {
-    if (typeof resolver !== "function") {
-        throw new TypeError("resolver must be a function.");
-    }
-    var deferred = defer();
-    try {
-        resolver(deferred.resolve, deferred.reject, deferred.notify);
-    } catch (reason) {
-        deferred.reject(reason);
-    }
-    return deferred.promise;
-}
-
-promise.race = race; // ES6
-promise.all = all; // ES6
-promise.reject = reject; // ES6
-promise.resolve = Q; // ES6
-
-// XXX experimental.  This method is a way to denote that a local value is
-// serializable and should be immediately dispatched to a remote upon request,
-// instead of passing a reference.
-Q.passByCopy = function (object) {
-    //freeze(object);
-    //passByCopies.set(object, true);
-    return object;
-};
-
-Promise.prototype.passByCopy = function () {
-    //freeze(object);
-    //passByCopies.set(object, true);
-    return this;
-};
-
-/**
- * If two promises eventually fulfill to the same value, promises that value,
- * but otherwise rejects.
- * @param x {Any*}
- * @param y {Any*}
- * @returns {Any*} a promise for x and y if they are the same, but a rejection
- * otherwise.
- *
- */
-Q.join = function (x, y) {
-    return Q(x).join(y);
-};
-
-Promise.prototype.join = function (that) {
-    return Q([this, that]).spread(function (x, y) {
-        if (x === y) {
-            // TODO: "===" should be Object.is or equiv
-            return x;
-        } else {
-            throw new Error("Q can't join: not the same: " + x + " " + y);
-        }
+function nextTick(fn, arg1, arg2, arg3) {
+  if (typeof fn !== 'function') {
+    throw new TypeError('"callback" argument must be a function');
+  }
+  var len = arguments.length;
+  var args, i;
+  switch (len) {
+  case 0:
+  case 1:
+    return process.nextTick(fn);
+  case 2:
+    return process.nextTick(function afterTickOne() {
+      fn.call(null, arg1);
     });
-};
-
-/**
- * Returns a promise for the first of an array of promises to become settled.
- * @param answers {Array[Any*]} promises to race
- * @returns {Any*} the first promise to be settled
- */
-Q.race = race;
-function race(answerPs) {
-    return promise(function (resolve, reject) {
-        // Switch to this once we can assume at least ES5
-        // answerPs.forEach(function (answerP) {
-        //     Q(answerP).then(resolve, reject);
-        // });
-        // Use this in the meantime
-        for (var i = 0, len = answerPs.length; i < len; i++) {
-            Q(answerPs[i]).then(resolve, reject);
-        }
+  case 3:
+    return process.nextTick(function afterTickTwo() {
+      fn.call(null, arg1, arg2);
     });
-}
-
-Promise.prototype.race = function () {
-    return this.then(Q.race);
-};
-
-/**
- * Constructs a Promise with a promise descriptor object and optional fallback
- * function.  The descriptor contains methods like when(rejected), get(name),
- * set(name, value), post(name, args), and delete(name), which all
- * return either a value, a promise for a value, or a rejection.  The fallback
- * accepts the operation name, a resolver, and any further arguments that would
- * have been forwarded to the appropriate method above had a method been
- * provided with the proper name.  The API makes no guarantees about the nature
- * of the returned object, apart from that it is usable whereever promises are
- * bought and sold.
- */
-Q.makePromise = Promise;
-function Promise(descriptor, fallback, inspect) {
-    if (fallback === void 0) {
-        fallback = function (op) {
-            return reject(new Error(
-                "Promise does not support operation: " + op
-            ));
-        };
-    }
-    if (inspect === void 0) {
-        inspect = function () {
-            return {state: "unknown"};
-        };
-    }
-
-    var promise = object_create(Promise.prototype);
-
-    promise.promiseDispatch = function (resolve, op, args) {
-        var result;
-        try {
-            if (descriptor[op]) {
-                result = descriptor[op].apply(promise, args);
-            } else {
-                result = fallback.call(promise, op, args);
-            }
-        } catch (exception) {
-            result = reject(exception);
-        }
-        if (resolve) {
-            resolve(result);
-        }
-    };
-
-    promise.inspect = inspect;
-
-    // XXX deprecated `valueOf` and `exception` support
-    if (inspect) {
-        var inspected = inspect();
-        if (inspected.state === "rejected") {
-            promise.exception = inspected.reason;
-        }
-
-        promise.valueOf = function () {
-            var inspected = inspect();
-            if (inspected.state === "pending" ||
-                inspected.state === "rejected") {
-                return promise;
-            }
-            return inspected.value;
-        };
-    }
-
-    return promise;
-}
-
-Promise.prototype.toString = function () {
-    return "[object Promise]";
-};
-
-Promise.prototype.then = function (fulfilled, rejected, progressed) {
-    var self = this;
-    var deferred = defer();
-    var done = false;   // ensure the untrusted promise makes at most a
-                        // single call to one of the callbacks
-
-    function _fulfilled(value) {
-        try {
-            return typeof fulfilled === "function" ? fulfilled(value) : value;
-        } catch (exception) {
-            return reject(exception);
-        }
-    }
-
-    function _rejected(exception) {
-        if (typeof rejected === "function") {
-            makeStackTraceLong(exception, self);
-            try {
-                return rejected(exception);
-            } catch (newException) {
-                return reject(newException);
-            }
-        }
-        return reject(exception);
-    }
-
-    function _progressed(value) {
-        return typeof progressed === "function" ? progressed(value) : value;
-    }
-
-    Q.nextTick(function () {
-        self.promiseDispatch(function (value) {
-            if (done) {
-                return;
-            }
-            done = true;
-
-            deferred.resolve(_fulfilled(value));
-        }, "when", [function (exception) {
-            if (done) {
-                return;
-            }
-            done = true;
-
-            deferred.resolve(_rejected(exception));
-        }]);
+  case 4:
+    return process.nextTick(function afterTickThree() {
+      fn.call(null, arg1, arg2, arg3);
     });
-
-    // Progress propagator need to be attached in the current tick.
-    self.promiseDispatch(void 0, "when", [void 0, function (value) {
-        var newValue;
-        var threw = false;
-        try {
-            newValue = _progressed(value);
-        } catch (e) {
-            threw = true;
-            if (Q.onerror) {
-                Q.onerror(e);
-            } else {
-                throw e;
-            }
-        }
-
-        if (!threw) {
-            deferred.notify(newValue);
-        }
-    }]);
-
-    return deferred.promise;
-};
-
-Q.tap = function (promise, callback) {
-    return Q(promise).tap(callback);
-};
-
-/**
- * Works almost like "finally", but not called for rejections.
- * Original resolution value is passed through callback unaffected.
- * Callback may return a promise that will be awaited for.
- * @param {Function} callback
- * @returns {Q.Promise}
- * @example
- * doSomething()
- *   .then(...)
- *   .tap(console.log)
- *   .then(...);
- */
-Promise.prototype.tap = function (callback) {
-    callback = Q(callback);
-
-    return this.then(function (value) {
-        return callback.fcall(value).thenResolve(value);
+  default:
+    args = new Array(len - 1);
+    i = 0;
+    while (i < args.length) {
+      args[i++] = arguments[i];
+    }
+    return process.nextTick(function afterTick() {
+      fn.apply(null, args);
     });
-};
-
-/**
- * Registers an observer on a promise.
- *
- * Guarantees:
- *
- * 1. that fulfilled and rejected will be called only once.
- * 2. that either the fulfilled callback or the rejected callback will be
- *    called, but not both.
- * 3. that fulfilled and rejected will not be called in this turn.
- *
- * @param value      promise or immediate reference to observe
- * @param fulfilled  function to be called with the fulfilled value
- * @param rejected   function to be called with the rejection exception
- * @param progressed function to be called on any progress notifications
- * @return promise for the return value from the invoked callback
- */
-Q.when = when;
-function when(value, fulfilled, rejected, progressed) {
-    return Q(value).then(fulfilled, rejected, progressed);
+  }
 }
 
-Promise.prototype.thenResolve = function (value) {
-    return this.then(function () { return value; });
+
+
+/***/ }),
+
+/***/ 914:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+// Copyright Joyent, Inc. and other Node contributors.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the
+// "Software"), to deal in the Software without restriction, including
+// without limitation the rights to use, copy, modify, merge, publish,
+// distribute, sublicense, and/or sell copies of the Software, and to permit
+// persons to whom the Software is furnished to do so, subject to the
+// following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+// USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+// a duplex stream is just a stream that is both readable and writable.
+// Since JS doesn't have multiple prototypal inheritance, this class
+// prototypally inherits from Readable, and then parasitically from
+// Writable.
+
+
+
+/*<replacement>*/
+
+var pna = __nccwpck_require__(2927);
+/*</replacement>*/
+
+/*<replacement>*/
+var objectKeys = Object.keys || function (obj) {
+  var keys = [];
+  for (var key in obj) {
+    keys.push(key);
+  }return keys;
 };
+/*</replacement>*/
 
-Q.thenResolve = function (promise, value) {
-    return Q(promise).thenResolve(value);
-};
+module.exports = Duplex;
 
-Promise.prototype.thenReject = function (reason) {
-    return this.then(function () { throw reason; });
-};
+/*<replacement>*/
+var util = Object.create(__nccwpck_require__(8610));
+util.inherits = __nccwpck_require__(2150);
+/*</replacement>*/
 
-Q.thenReject = function (promise, reason) {
-    return Q(promise).thenReject(reason);
-};
+var Readable = __nccwpck_require__(7640);
+var Writable = __nccwpck_require__(8549);
 
-/**
- * If an object is not a promise, it is as "near" as possible.
- * If a promise is rejected, it is as "near" as possible too.
- * If it’s a fulfilled promise, the fulfillment value is nearer.
- * If it’s a deferred promise and the deferred has been resolved, the
- * resolution is "nearer".
- * @param object
- * @returns most resolved (nearest) form of the object
- */
+util.inherits(Duplex, Readable);
 
-// XXX should we re-do this?
-Q.nearer = nearer;
-function nearer(value) {
-    if (isPromise(value)) {
-        var inspected = value.inspect();
-        if (inspected.state === "fulfilled") {
-            return inspected.value;
-        }
-    }
-    return value;
+{
+  // avoid scope creep, the keys array can then be collected
+  var keys = objectKeys(Writable.prototype);
+  for (var v = 0; v < keys.length; v++) {
+    var method = keys[v];
+    if (!Duplex.prototype[method]) Duplex.prototype[method] = Writable.prototype[method];
+  }
 }
 
-/**
- * @returns whether the given object is a promise.
- * Otherwise it is a fulfilled value.
- */
-Q.isPromise = isPromise;
-function isPromise(object) {
-    return object instanceof Promise;
+function Duplex(options) {
+  if (!(this instanceof Duplex)) return new Duplex(options);
+
+  Readable.call(this, options);
+  Writable.call(this, options);
+
+  if (options && options.readable === false) this.readable = false;
+
+  if (options && options.writable === false) this.writable = false;
+
+  this.allowHalfOpen = true;
+  if (options && options.allowHalfOpen === false) this.allowHalfOpen = false;
+
+  this.once('end', onend);
 }
 
-Q.isPromiseAlike = isPromiseAlike;
-function isPromiseAlike(object) {
-    return isObject(object) && typeof object.then === "function";
-}
-
-/**
- * @returns whether the given object is a pending promise, meaning not
- * fulfilled or rejected.
- */
-Q.isPending = isPending;
-function isPending(object) {
-    return isPromise(object) && object.inspect().state === "pending";
-}
-
-Promise.prototype.isPending = function () {
-    return this.inspect().state === "pending";
-};
-
-/**
- * @returns whether the given object is a value or fulfilled
- * promise.
- */
-Q.isFulfilled = isFulfilled;
-function isFulfilled(object) {
-    return !isPromise(object) || object.inspect().state === "fulfilled";
-}
-
-Promise.prototype.isFulfilled = function () {
-    return this.inspect().state === "fulfilled";
-};
-
-/**
- * @returns whether the given object is a rejected promise.
- */
-Q.isRejected = isRejected;
-function isRejected(object) {
-    return isPromise(object) && object.inspect().state === "rejected";
-}
-
-Promise.prototype.isRejected = function () {
-    return this.inspect().state === "rejected";
-};
-
-//// BEGIN UNHANDLED REJECTION TRACKING
-
-// This promise library consumes exceptions thrown in handlers so they can be
-// handled by a subsequent promise.  The exceptions get added to this array when
-// they are created, and removed when they are handled.  Note that in ES6 or
-// shimmed environments, this would naturally be a `Set`.
-var unhandledReasons = [];
-var unhandledRejections = [];
-var reportedUnhandledRejections = [];
-var trackUnhandledRejections = true;
-
-function resetUnhandledRejections() {
-    unhandledReasons.length = 0;
-    unhandledRejections.length = 0;
-
-    if (!trackUnhandledRejections) {
-        trackUnhandledRejections = true;
-    }
-}
-
-function trackRejection(promise, reason) {
-    if (!trackUnhandledRejections) {
-        return;
-    }
-    if (typeof process === "object" && typeof process.emit === "function") {
-        Q.nextTick.runAfter(function () {
-            if (array_indexOf(unhandledRejections, promise) !== -1) {
-                process.emit("unhandledRejection", reason, promise);
-                reportedUnhandledRejections.push(promise);
-            }
-        });
-    }
-
-    unhandledRejections.push(promise);
-    if (reason && typeof reason.stack !== "undefined") {
-        unhandledReasons.push(reason.stack);
-    } else {
-        unhandledReasons.push("(no stack) " + reason);
-    }
-}
-
-function untrackRejection(promise) {
-    if (!trackUnhandledRejections) {
-        return;
-    }
-
-    var at = array_indexOf(unhandledRejections, promise);
-    if (at !== -1) {
-        if (typeof process === "object" && typeof process.emit === "function") {
-            Q.nextTick.runAfter(function () {
-                var atReport = array_indexOf(reportedUnhandledRejections, promise);
-                if (atReport !== -1) {
-                    process.emit("rejectionHandled", unhandledReasons[at], promise);
-                    reportedUnhandledRejections.splice(atReport, 1);
-                }
-            });
-        }
-        unhandledRejections.splice(at, 1);
-        unhandledReasons.splice(at, 1);
-    }
-}
-
-Q.resetUnhandledRejections = resetUnhandledRejections;
-
-Q.getUnhandledReasons = function () {
-    // Make a copy so that consumers can't interfere with our internal state.
-    return unhandledReasons.slice();
-};
-
-Q.stopUnhandledRejectionTracking = function () {
-    resetUnhandledRejections();
-    trackUnhandledRejections = false;
-};
-
-resetUnhandledRejections();
-
-//// END UNHANDLED REJECTION TRACKING
-
-/**
- * Constructs a rejected promise.
- * @param reason value describing the failure
- */
-Q.reject = reject;
-function reject(reason) {
-    var rejection = Promise({
-        "when": function (rejected) {
-            // note that the error has been handled
-            if (rejected) {
-                untrackRejection(this);
-            }
-            return rejected ? rejected(reason) : this;
-        }
-    }, function fallback() {
-        return this;
-    }, function inspect() {
-        return { state: "rejected", reason: reason };
-    });
-
-    // Note that the reason has not been handled.
-    trackRejection(rejection, reason);
-
-    return rejection;
-}
-
-/**
- * Constructs a fulfilled promise for an immediate reference.
- * @param value immediate reference
- */
-Q.fulfill = fulfill;
-function fulfill(value) {
-    return Promise({
-        "when": function () {
-            return value;
-        },
-        "get": function (name) {
-            return value[name];
-        },
-        "set": function (name, rhs) {
-            value[name] = rhs;
-        },
-        "delete": function (name) {
-            delete value[name];
-        },
-        "post": function (name, args) {
-            // Mark Miller proposes that post with no name should apply a
-            // promised function.
-            if (name === null || name === void 0) {
-                return value.apply(void 0, args);
-            } else {
-                return value[name].apply(value, args);
-            }
-        },
-        "apply": function (thisp, args) {
-            return value.apply(thisp, args);
-        },
-        "keys": function () {
-            return object_keys(value);
-        }
-    }, void 0, function inspect() {
-        return { state: "fulfilled", value: value };
-    });
-}
-
-/**
- * Converts thenables to Q promises.
- * @param promise thenable promise
- * @returns a Q promise
- */
-function coerce(promise) {
-    var deferred = defer();
-    Q.nextTick(function () {
-        try {
-            promise.then(deferred.resolve, deferred.reject, deferred.notify);
-        } catch (exception) {
-            deferred.reject(exception);
-        }
-    });
-    return deferred.promise;
-}
-
-/**
- * Annotates an object such that it will never be
- * transferred away from this process over any promise
- * communication channel.
- * @param object
- * @returns promise a wrapping of that object that
- * additionally responds to the "isDef" message
- * without a rejection.
- */
-Q.master = master;
-function master(object) {
-    return Promise({
-        "isDef": function () {}
-    }, function fallback(op, args) {
-        return dispatch(object, op, args);
-    }, function () {
-        return Q(object).inspect();
-    });
-}
-
-/**
- * Spreads the values of a promised array of arguments into the
- * fulfillment callback.
- * @param fulfilled callback that receives variadic arguments from the
- * promised array
- * @param rejected callback that receives the exception if the promise
- * is rejected.
- * @returns a promise for the return value or thrown exception of
- * either callback.
- */
-Q.spread = spread;
-function spread(value, fulfilled, rejected) {
-    return Q(value).spread(fulfilled, rejected);
-}
-
-Promise.prototype.spread = function (fulfilled, rejected) {
-    return this.all().then(function (array) {
-        return fulfilled.apply(void 0, array);
-    }, rejected);
-};
-
-/**
- * The async function is a decorator for generator functions, turning
- * them into asynchronous generators.  Although generators are only part
- * of the newest ECMAScript 6 drafts, this code does not cause syntax
- * errors in older engines.  This code should continue to work and will
- * in fact improve over time as the language improves.
- *
- * ES6 generators are currently part of V8 version 3.19 with the
- * --harmony-generators runtime flag enabled.  SpiderMonkey has had them
- * for longer, but under an older Python-inspired form.  This function
- * works on both kinds of generators.
- *
- * Decorates a generator function such that:
- *  - it may yield promises
- *  - execution will continue when that promise is fulfilled
- *  - the value of the yield expression will be the fulfilled value
- *  - it returns a promise for the return value (when the generator
- *    stops iterating)
- *  - the decorated function returns a promise for the return value
- *    of the generator or the first rejected promise among those
- *    yielded.
- *  - if an error is thrown in the generator, it propagates through
- *    every following yield until it is caught, or until it escapes
- *    the generator function altogether, and is translated into a
- *    rejection for the promise returned by the decorated generator.
- */
-Q.async = async;
-function async(makeGenerator) {
-    return function () {
-        // when verb is "send", arg is a value
-        // when verb is "throw", arg is an exception
-        function continuer(verb, arg) {
-            var result;
-
-            // Until V8 3.19 / Chromium 29 is released, SpiderMonkey is the only
-            // engine that has a deployed base of browsers that support generators.
-            // However, SM's generators use the Python-inspired semantics of
-            // outdated ES6 drafts.  We would like to support ES6, but we'd also
-            // like to make it possible to use generators in deployed browsers, so
-            // we also support Python-style generators.  At some point we can remove
-            // this block.
-
-            if (typeof StopIteration === "undefined") {
-                // ES6 Generators
-                try {
-                    result = generator[verb](arg);
-                } catch (exception) {
-                    return reject(exception);
-                }
-                if (result.done) {
-                    return Q(result.value);
-                } else {
-                    return when(result.value, callback, errback);
-                }
-            } else {
-                // SpiderMonkey Generators
-                // FIXME: Remove this case when SM does ES6 generators.
-                try {
-                    result = generator[verb](arg);
-                } catch (exception) {
-                    if (isStopIteration(exception)) {
-                        return Q(exception.value);
-                    } else {
-                        return reject(exception);
-                    }
-                }
-                return when(result, callback, errback);
-            }
-        }
-        var generator = makeGenerator.apply(this, arguments);
-        var callback = continuer.bind(continuer, "next");
-        var errback = continuer.bind(continuer, "throw");
-        return callback();
-    };
-}
-
-/**
- * The spawn function is a small wrapper around async that immediately
- * calls the generator and also ends the promise chain, so that any
- * unhandled errors are thrown instead of forwarded to the error
- * handler. This is useful because it's extremely common to run
- * generators at the top-level to work with libraries.
- */
-Q.spawn = spawn;
-function spawn(makeGenerator) {
-    Q.done(Q.async(makeGenerator)());
-}
-
-// FIXME: Remove this interface once ES6 generators are in SpiderMonkey.
-/**
- * Throws a ReturnValue exception to stop an asynchronous generator.
- *
- * This interface is a stop-gap measure to support generator return
- * values in older Firefox/SpiderMonkey.  In browsers that support ES6
- * generators like Chromium 29, just use "return" in your generator
- * functions.
- *
- * @param value the return value for the surrounding generator
- * @throws ReturnValue exception with the value.
- * @example
- * // ES6 style
- * Q.async(function* () {
- *      var foo = yield getFooPromise();
- *      var bar = yield getBarPromise();
- *      return foo + bar;
- * })
- * // Older SpiderMonkey style
- * Q.async(function () {
- *      var foo = yield getFooPromise();
- *      var bar = yield getBarPromise();
- *      Q.return(foo + bar);
- * })
- */
-Q["return"] = _return;
-function _return(value) {
-    throw new QReturnValue(value);
-}
-
-/**
- * The promised function decorator ensures that any promise arguments
- * are settled and passed as values (`this` is also settled and passed
- * as a value).  It will also ensure that the result of a function is
- * always a promise.
- *
- * @example
- * var add = Q.promised(function (a, b) {
- *     return a + b;
- * });
- * add(Q(a), Q(B));
- *
- * @param {function} callback The function to decorate
- * @returns {function} a function that has been decorated.
- */
-Q.promised = promised;
-function promised(callback) {
-    return function () {
-        return spread([this, all(arguments)], function (self, args) {
-            return callback.apply(self, args);
-        });
-    };
-}
-
-/**
- * sends a message to a value in a future turn
- * @param object* the recipient
- * @param op the name of the message operation, e.g., "when",
- * @param args further arguments to be forwarded to the operation
- * @returns result {Promise} a promise for the result of the operation
- */
-Q.dispatch = dispatch;
-function dispatch(object, op, args) {
-    return Q(object).dispatch(op, args);
-}
-
-Promise.prototype.dispatch = function (op, args) {
-    var self = this;
-    var deferred = defer();
-    Q.nextTick(function () {
-        self.promiseDispatch(deferred.resolve, op, args);
-    });
-    return deferred.promise;
-};
-
-/**
- * Gets the value of a property in a future turn.
- * @param object    promise or immediate reference for target object
- * @param name      name of property to get
- * @return promise for the property value
- */
-Q.get = function (object, key) {
-    return Q(object).dispatch("get", [key]);
-};
-
-Promise.prototype.get = function (key) {
-    return this.dispatch("get", [key]);
-};
-
-/**
- * Sets the value of a property in a future turn.
- * @param object    promise or immediate reference for object object
- * @param name      name of property to set
- * @param value     new value of property
- * @return promise for the return value
- */
-Q.set = function (object, key, value) {
-    return Q(object).dispatch("set", [key, value]);
-};
-
-Promise.prototype.set = function (key, value) {
-    return this.dispatch("set", [key, value]);
-};
-
-/**
- * Deletes a property in a future turn.
- * @param object    promise or immediate reference for target object
- * @param name      name of property to delete
- * @return promise for the return value
- */
-Q.del = // XXX legacy
-Q["delete"] = function (object, key) {
-    return Q(object).dispatch("delete", [key]);
-};
-
-Promise.prototype.del = // XXX legacy
-Promise.prototype["delete"] = function (key) {
-    return this.dispatch("delete", [key]);
-};
-
-/**
- * Invokes a method in a future turn.
- * @param object    promise or immediate reference for target object
- * @param name      name of method to invoke
- * @param value     a value to post, typically an array of
- *                  invocation arguments for promises that
- *                  are ultimately backed with `resolve` values,
- *                  as opposed to those backed with URLs
- *                  wherein the posted value can be any
- *                  JSON serializable object.
- * @return promise for the return value
- */
-// bound locally because it is used by other methods
-Q.mapply = // XXX As proposed by "Redsandro"
-Q.post = function (object, name, args) {
-    return Q(object).dispatch("post", [name, args]);
-};
-
-Promise.prototype.mapply = // XXX As proposed by "Redsandro"
-Promise.prototype.post = function (name, args) {
-    return this.dispatch("post", [name, args]);
-};
-
-/**
- * Invokes a method in a future turn.
- * @param object    promise or immediate reference for target object
- * @param name      name of method to invoke
- * @param ...args   array of invocation arguments
- * @return promise for the return value
- */
-Q.send = // XXX Mark Miller's proposed parlance
-Q.mcall = // XXX As proposed by "Redsandro"
-Q.invoke = function (object, name /*...args*/) {
-    return Q(object).dispatch("post", [name, array_slice(arguments, 2)]);
-};
-
-Promise.prototype.send = // XXX Mark Miller's proposed parlance
-Promise.prototype.mcall = // XXX As proposed by "Redsandro"
-Promise.prototype.invoke = function (name /*...args*/) {
-    return this.dispatch("post", [name, array_slice(arguments, 1)]);
-};
-
-/**
- * Applies the promised function in a future turn.
- * @param object    promise or immediate reference for target function
- * @param args      array of application arguments
- */
-Q.fapply = function (object, args) {
-    return Q(object).dispatch("apply", [void 0, args]);
-};
-
-Promise.prototype.fapply = function (args) {
-    return this.dispatch("apply", [void 0, args]);
-};
-
-/**
- * Calls the promised function in a future turn.
- * @param object    promise or immediate reference for target function
- * @param ...args   array of application arguments
- */
-Q["try"] =
-Q.fcall = function (object /* ...args*/) {
-    return Q(object).dispatch("apply", [void 0, array_slice(arguments, 1)]);
-};
-
-Promise.prototype.fcall = function (/*...args*/) {
-    return this.dispatch("apply", [void 0, array_slice(arguments)]);
-};
-
-/**
- * Binds the promised function, transforming return values into a fulfilled
- * promise and thrown errors into a rejected one.
- * @param object    promise or immediate reference for target function
- * @param ...args   array of application arguments
- */
-Q.fbind = function (object /*...args*/) {
-    var promise = Q(object);
-    var args = array_slice(arguments, 1);
-    return function fbound() {
-        return promise.dispatch("apply", [
-            this,
-            args.concat(array_slice(arguments))
-        ]);
-    };
-};
-Promise.prototype.fbind = function (/*...args*/) {
-    var promise = this;
-    var args = array_slice(arguments);
-    return function fbound() {
-        return promise.dispatch("apply", [
-            this,
-            args.concat(array_slice(arguments))
-        ]);
-    };
-};
-
-/**
- * Requests the names of the owned properties of a promised
- * object in a future turn.
- * @param object    promise or immediate reference for target object
- * @return promise for the keys of the eventually settled object
- */
-Q.keys = function (object) {
-    return Q(object).dispatch("keys", []);
-};
-
-Promise.prototype.keys = function () {
-    return this.dispatch("keys", []);
-};
-
-/**
- * Turns an array of promises into a promise for an array.  If any of
- * the promises gets rejected, the whole array is rejected immediately.
- * @param {Array*} an array (or promise for an array) of values (or
- * promises for values)
- * @returns a promise for an array of the corresponding values
- */
-// By Mark Miller
-// http://wiki.ecmascript.org/doku.php?id=strawman:concurrency&rev=1308776521#allfulfilled
-Q.all = all;
-function all(promises) {
-    return when(promises, function (promises) {
-        var pendingCount = 0;
-        var deferred = defer();
-        array_reduce(promises, function (undefined, promise, index) {
-            var snapshot;
-            if (
-                isPromise(promise) &&
-                (snapshot = promise.inspect()).state === "fulfilled"
-            ) {
-                promises[index] = snapshot.value;
-            } else {
-                ++pendingCount;
-                when(
-                    promise,
-                    function (value) {
-                        promises[index] = value;
-                        if (--pendingCount === 0) {
-                            deferred.resolve(promises);
-                        }
-                    },
-                    deferred.reject,
-                    function (progress) {
-                        deferred.notify({ index: index, value: progress });
-                    }
-                );
-            }
-        }, void 0);
-        if (pendingCount === 0) {
-            deferred.resolve(promises);
-        }
-        return deferred.promise;
-    });
-}
-
-Promise.prototype.all = function () {
-    return all(this);
-};
-
-/**
- * Returns the first resolved promise of an array. Prior rejected promises are
- * ignored.  Rejects only if all promises are rejected.
- * @param {Array*} an array containing values or promises for values
- * @returns a promise fulfilled with the value of the first resolved promise,
- * or a rejected promise if all promises are rejected.
- */
-Q.any = any;
-
-function any(promises) {
-    if (promises.length === 0) {
-        return Q.resolve();
-    }
-
-    var deferred = Q.defer();
-    var pendingCount = 0;
-    array_reduce(promises, function (prev, current, index) {
-        var promise = promises[index];
-
-        pendingCount++;
-
-        when(promise, onFulfilled, onRejected, onProgress);
-        function onFulfilled(result) {
-            deferred.resolve(result);
-        }
-        function onRejected(err) {
-            pendingCount--;
-            if (pendingCount === 0) {
-                var rejection = err || new Error("" + err);
-
-                rejection.message = ("Q can't get fulfillment value from any promise, all " +
-                    "promises were rejected. Last error message: " + rejection.message);
-
-                deferred.reject(rejection);
-            }
-        }
-        function onProgress(progress) {
-            deferred.notify({
-                index: index,
-                value: progress
-            });
-        }
-    }, undefined);
-
-    return deferred.promise;
-}
-
-Promise.prototype.any = function () {
-    return any(this);
-};
-
-/**
- * Waits for all promises to be settled, either fulfilled or
- * rejected.  This is distinct from `all` since that would stop
- * waiting at the first rejection.  The promise returned by
- * `allResolved` will never be rejected.
- * @param promises a promise for an array (or an array) of promises
- * (or values)
- * @return a promise for an array of promises
- */
-Q.allResolved = deprecate(allResolved, "allResolved", "allSettled");
-function allResolved(promises) {
-    return when(promises, function (promises) {
-        promises = array_map(promises, Q);
-        return when(all(array_map(promises, function (promise) {
-            return when(promise, noop, noop);
-        })), function () {
-            return promises;
-        });
-    });
-}
-
-Promise.prototype.allResolved = function () {
-    return allResolved(this);
-};
-
-/**
- * @see Promise#allSettled
- */
-Q.allSettled = allSettled;
-function allSettled(promises) {
-    return Q(promises).allSettled();
-}
-
-/**
- * Turns an array of promises into a promise for an array of their states (as
- * returned by `inspect`) when they have all settled.
- * @param {Array[Any*]} values an array (or promise for an array) of values (or
- * promises for values)
- * @returns {Array[State]} an array of states for the respective values.
- */
-Promise.prototype.allSettled = function () {
-    return this.then(function (promises) {
-        return all(array_map(promises, function (promise) {
-            promise = Q(promise);
-            function regardless() {
-                return promise.inspect();
-            }
-            return promise.then(regardless, regardless);
-        }));
-    });
-};
-
-/**
- * Captures the failure of a promise, giving an oportunity to recover
- * with a callback.  If the given promise is fulfilled, the returned
- * promise is fulfilled.
- * @param {Any*} promise for something
- * @param {Function} callback to fulfill the returned promise if the
- * given promise is rejected
- * @returns a promise for the return value of the callback
- */
-Q.fail = // XXX legacy
-Q["catch"] = function (object, rejected) {
-    return Q(object).then(void 0, rejected);
-};
-
-Promise.prototype.fail = // XXX legacy
-Promise.prototype["catch"] = function (rejected) {
-    return this.then(void 0, rejected);
-};
-
-/**
- * Attaches a listener that can respond to progress notifications from a
- * promise's originating deferred. This listener receives the exact arguments
- * passed to ``deferred.notify``.
- * @param {Any*} promise for something
- * @param {Function} callback to receive any progress notifications
- * @returns the given promise, unchanged
- */
-Q.progress = progress;
-function progress(object, progressed) {
-    return Q(object).then(void 0, void 0, progressed);
-}
-
-Promise.prototype.progress = function (progressed) {
-    return this.then(void 0, void 0, progressed);
-};
-
-/**
- * Provides an opportunity to observe the settling of a promise,
- * regardless of whether the promise is fulfilled or rejected.  Forwards
- * the resolution to the returned promise when the callback is done.
- * The callback can return a promise to defer completion.
- * @param {Any*} promise
- * @param {Function} callback to observe the resolution of the given
- * promise, takes no arguments.
- * @returns a promise for the resolution of the given promise when
- * ``fin`` is done.
- */
-Q.fin = // XXX legacy
-Q["finally"] = function (object, callback) {
-    return Q(object)["finally"](callback);
-};
-
-Promise.prototype.fin = // XXX legacy
-Promise.prototype["finally"] = function (callback) {
-    if (!callback || typeof callback.apply !== "function") {
-        throw new Error("Q can't apply finally callback");
-    }
-    callback = Q(callback);
-    return this.then(function (value) {
-        return callback.fcall().then(function () {
-            return value;
-        });
-    }, function (reason) {
-        // TODO attempt to recycle the rejection with "this".
-        return callback.fcall().then(function () {
-            throw reason;
-        });
-    });
-};
-
-/**
- * Terminates a chain of promises, forcing rejections to be
- * thrown as exceptions.
- * @param {Any*} promise at the end of a chain of promises
- * @returns nothing
- */
-Q.done = function (object, fulfilled, rejected, progress) {
-    return Q(object).done(fulfilled, rejected, progress);
-};
-
-Promise.prototype.done = function (fulfilled, rejected, progress) {
-    var onUnhandledError = function (error) {
-        // forward to a future turn so that ``when``
-        // does not catch it and turn it into a rejection.
-        Q.nextTick(function () {
-            makeStackTraceLong(error, promise);
-            if (Q.onerror) {
-                Q.onerror(error);
-            } else {
-                throw error;
-            }
-        });
-    };
-
-    // Avoid unnecessary `nextTick`ing via an unnecessary `when`.
-    var promise = fulfilled || rejected || progress ?
-        this.then(fulfilled, rejected, progress) :
-        this;
-
-    if (typeof process === "object" && process && process.domain) {
-        onUnhandledError = process.domain.bind(onUnhandledError);
-    }
-
-    promise.then(void 0, onUnhandledError);
-};
-
-/**
- * Causes a promise to be rejected if it does not get fulfilled before
- * some milliseconds time out.
- * @param {Any*} promise
- * @param {Number} milliseconds timeout
- * @param {Any*} custom error message or Error object (optional)
- * @returns a promise for the resolution of the given promise if it is
- * fulfilled before the timeout, otherwise rejected.
- */
-Q.timeout = function (object, ms, error) {
-    return Q(object).timeout(ms, error);
-};
-
-Promise.prototype.timeout = function (ms, error) {
-    var deferred = defer();
-    var timeoutId = setTimeout(function () {
-        if (!error || "string" === typeof error) {
-            error = new Error(error || "Timed out after " + ms + " ms");
-            error.code = "ETIMEDOUT";
-        }
-        deferred.reject(error);
-    }, ms);
-
-    this.then(function (value) {
-        clearTimeout(timeoutId);
-        deferred.resolve(value);
-    }, function (exception) {
-        clearTimeout(timeoutId);
-        deferred.reject(exception);
-    }, deferred.notify);
-
-    return deferred.promise;
-};
-
-/**
- * Returns a promise for the given value (or promised value), some
- * milliseconds after it resolved. Passes rejections immediately.
- * @param {Any*} promise
- * @param {Number} milliseconds
- * @returns a promise for the resolution of the given promise after milliseconds
- * time has elapsed since the resolution of the given promise.
- * If the given promise rejects, that is passed immediately.
- */
-Q.delay = function (object, timeout) {
-    if (timeout === void 0) {
-        timeout = object;
-        object = void 0;
-    }
-    return Q(object).delay(timeout);
-};
-
-Promise.prototype.delay = function (timeout) {
-    return this.then(function (value) {
-        var deferred = defer();
-        setTimeout(function () {
-            deferred.resolve(value);
-        }, timeout);
-        return deferred.promise;
-    });
-};
-
-/**
- * Passes a continuation to a Node function, which is called with the given
- * arguments provided as an array, and returns a promise.
- *
- *      Q.nfapply(FS.readFile, [__filename])
- *      .then(function (content) {
- *      })
- *
- */
-Q.nfapply = function (callback, args) {
-    return Q(callback).nfapply(args);
-};
-
-Promise.prototype.nfapply = function (args) {
-    var deferred = defer();
-    var nodeArgs = array_slice(args);
-    nodeArgs.push(deferred.makeNodeResolver());
-    this.fapply(nodeArgs).fail(deferred.reject);
-    return deferred.promise;
-};
-
-/**
- * Passes a continuation to a Node function, which is called with the given
- * arguments provided individually, and returns a promise.
- * @example
- * Q.nfcall(FS.readFile, __filename)
- * .then(function (content) {
- * })
- *
- */
-Q.nfcall = function (callback /*...args*/) {
-    var args = array_slice(arguments, 1);
-    return Q(callback).nfapply(args);
-};
-
-Promise.prototype.nfcall = function (/*...args*/) {
-    var nodeArgs = array_slice(arguments);
-    var deferred = defer();
-    nodeArgs.push(deferred.makeNodeResolver());
-    this.fapply(nodeArgs).fail(deferred.reject);
-    return deferred.promise;
-};
-
-/**
- * Wraps a NodeJS continuation passing function and returns an equivalent
- * version that returns a promise.
- * @example
- * Q.nfbind(FS.readFile, __filename)("utf-8")
- * .then(console.log)
- * .done()
- */
-Q.nfbind =
-Q.denodeify = function (callback /*...args*/) {
-    if (callback === undefined) {
-        throw new Error("Q can't wrap an undefined function");
-    }
-    var baseArgs = array_slice(arguments, 1);
-    return function () {
-        var nodeArgs = baseArgs.concat(array_slice(arguments));
-        var deferred = defer();
-        nodeArgs.push(deferred.makeNodeResolver());
-        Q(callback).fapply(nodeArgs).fail(deferred.reject);
-        return deferred.promise;
-    };
-};
-
-Promise.prototype.nfbind =
-Promise.prototype.denodeify = function (/*...args*/) {
-    var args = array_slice(arguments);
-    args.unshift(this);
-    return Q.denodeify.apply(void 0, args);
-};
-
-Q.nbind = function (callback, thisp /*...args*/) {
-    var baseArgs = array_slice(arguments, 2);
-    return function () {
-        var nodeArgs = baseArgs.concat(array_slice(arguments));
-        var deferred = defer();
-        nodeArgs.push(deferred.makeNodeResolver());
-        function bound() {
-            return callback.apply(thisp, arguments);
-        }
-        Q(bound).fapply(nodeArgs).fail(deferred.reject);
-        return deferred.promise;
-    };
-};
-
-Promise.prototype.nbind = function (/*thisp, ...args*/) {
-    var args = array_slice(arguments, 0);
-    args.unshift(this);
-    return Q.nbind.apply(void 0, args);
-};
-
-/**
- * Calls a method of a Node-style object that accepts a Node-style
- * callback with a given array of arguments, plus a provided callback.
- * @param object an object that has the named method
- * @param {String} name name of the method of object
- * @param {Array} args arguments to pass to the method; the callback
- * will be provided by Q and appended to these arguments.
- * @returns a promise for the value or error
- */
-Q.nmapply = // XXX As proposed by "Redsandro"
-Q.npost = function (object, name, args) {
-    return Q(object).npost(name, args);
-};
-
-Promise.prototype.nmapply = // XXX As proposed by "Redsandro"
-Promise.prototype.npost = function (name, args) {
-    var nodeArgs = array_slice(args || []);
-    var deferred = defer();
-    nodeArgs.push(deferred.makeNodeResolver());
-    this.dispatch("post", [name, nodeArgs]).fail(deferred.reject);
-    return deferred.promise;
-};
-
-/**
- * Calls a method of a Node-style object that accepts a Node-style
- * callback, forwarding the given variadic arguments, plus a provided
- * callback argument.
- * @param object an object that has the named method
- * @param {String} name name of the method of object
- * @param ...args arguments to pass to the method; the callback will
- * be provided by Q and appended to these arguments.
- * @returns a promise for the value or error
- */
-Q.nsend = // XXX Based on Mark Miller's proposed "send"
-Q.nmcall = // XXX Based on "Redsandro's" proposal
-Q.ninvoke = function (object, name /*...args*/) {
-    var nodeArgs = array_slice(arguments, 2);
-    var deferred = defer();
-    nodeArgs.push(deferred.makeNodeResolver());
-    Q(object).dispatch("post", [name, nodeArgs]).fail(deferred.reject);
-    return deferred.promise;
-};
-
-Promise.prototype.nsend = // XXX Based on Mark Miller's proposed "send"
-Promise.prototype.nmcall = // XXX Based on "Redsandro's" proposal
-Promise.prototype.ninvoke = function (name /*...args*/) {
-    var nodeArgs = array_slice(arguments, 1);
-    var deferred = defer();
-    nodeArgs.push(deferred.makeNodeResolver());
-    this.dispatch("post", [name, nodeArgs]).fail(deferred.reject);
-    return deferred.promise;
-};
-
-/**
- * If a function would like to support both Node continuation-passing-style and
- * promise-returning-style, it can end its internal promise chain with
- * `nodeify(nodeback)`, forwarding the optional nodeback argument.  If the user
- * elects to use a nodeback, the result will be sent there.  If they do not
- * pass a nodeback, they will receive the result promise.
- * @param object a result (or a promise for a result)
- * @param {Function} nodeback a Node.js-style callback
- * @returns either the promise or nothing
- */
-Q.nodeify = nodeify;
-function nodeify(object, nodeback) {
-    return Q(object).nodeify(nodeback);
-}
-
-Promise.prototype.nodeify = function (nodeback) {
-    if (nodeback) {
-        this.then(function (value) {
-            Q.nextTick(function () {
-                nodeback(null, value);
-            });
-        }, function (error) {
-            Q.nextTick(function () {
-                nodeback(error);
-            });
-        });
-    } else {
-        return this;
-    }
-};
-
-Q.noConflict = function() {
-    throw new Error("Q.noConflict only works when Q is used as a global");
-};
-
-// All code before this point will be filtered from stack traces.
-var qEndingLine = captureLine();
-
-return Q;
-
+Object.defineProperty(Duplex.prototype, 'writableHighWaterMark', {
+  // making it explicit this property is not enumerable
+  // because otherwise some prototype manipulation in
+  // userland will fail
+  enumerable: false,
+  get: function () {
+    return this._writableState.highWaterMark;
+  }
 });
 
+// the no-half-open enforcer
+function onend() {
+  // if we allow half-open state, or if the writable side ended,
+  // then we're ok.
+  if (this.allowHalfOpen || this._writableState.ended) return;
+
+  // no more data can be written.
+  // But allow more writes to happen in this tick.
+  pna.nextTick(onEndNT, this);
+}
+
+function onEndNT(self) {
+  self.end();
+}
+
+Object.defineProperty(Duplex.prototype, 'destroyed', {
+  get: function () {
+    if (this._readableState === undefined || this._writableState === undefined) {
+      return false;
+    }
+    return this._readableState.destroyed && this._writableState.destroyed;
+  },
+  set: function (value) {
+    // we ignore the value if the stream
+    // has not been initialized yet
+    if (this._readableState === undefined || this._writableState === undefined) {
+      return;
+    }
+
+    // backward compatibility, the user is explicitly
+    // managing destroyed
+    this._readableState.destroyed = value;
+    this._writableState.destroyed = value;
+  }
+});
+
+Duplex.prototype._destroy = function (err, cb) {
+  this.push(null);
+  this.end();
+
+  pna.nextTick(cb, err);
+};
+
+/***/ }),
+
+/***/ 5140:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+// Copyright Joyent, Inc. and other Node contributors.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the
+// "Software"), to deal in the Software without restriction, including
+// without limitation the rights to use, copy, modify, merge, publish,
+// distribute, sublicense, and/or sell copies of the Software, and to permit
+// persons to whom the Software is furnished to do so, subject to the
+// following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+// USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+// a passthrough stream.
+// basically just the most minimal sort of Transform stream.
+// Every written chunk gets output as-is.
+
+
+
+module.exports = PassThrough;
+
+var Transform = __nccwpck_require__(576);
+
+/*<replacement>*/
+var util = Object.create(__nccwpck_require__(8610));
+util.inherits = __nccwpck_require__(2150);
+/*</replacement>*/
+
+util.inherits(PassThrough, Transform);
+
+function PassThrough(options) {
+  if (!(this instanceof PassThrough)) return new PassThrough(options);
+
+  Transform.call(this, options);
+}
+
+PassThrough.prototype._transform = function (chunk, encoding, cb) {
+  cb(null, chunk);
+};
+
+/***/ }),
+
+/***/ 7640:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+// Copyright Joyent, Inc. and other Node contributors.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the
+// "Software"), to deal in the Software without restriction, including
+// without limitation the rights to use, copy, modify, merge, publish,
+// distribute, sublicense, and/or sell copies of the Software, and to permit
+// persons to whom the Software is furnished to do so, subject to the
+// following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+// USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+
+
+/*<replacement>*/
+
+var pna = __nccwpck_require__(2927);
+/*</replacement>*/
+
+module.exports = Readable;
+
+/*<replacement>*/
+var isArray = __nccwpck_require__(7305);
+/*</replacement>*/
+
+/*<replacement>*/
+var Duplex;
+/*</replacement>*/
+
+Readable.ReadableState = ReadableState;
+
+/*<replacement>*/
+var EE = (__nccwpck_require__(2361).EventEmitter);
+
+var EElistenerCount = function (emitter, type) {
+  return emitter.listeners(type).length;
+};
+/*</replacement>*/
+
+/*<replacement>*/
+var Stream = __nccwpck_require__(6268);
+/*</replacement>*/
+
+/*<replacement>*/
+
+var Buffer = (__nccwpck_require__(582).Buffer);
+var OurUint8Array = global.Uint8Array || function () {};
+function _uint8ArrayToBuffer(chunk) {
+  return Buffer.from(chunk);
+}
+function _isUint8Array(obj) {
+  return Buffer.isBuffer(obj) || obj instanceof OurUint8Array;
+}
+
+/*</replacement>*/
+
+/*<replacement>*/
+var util = Object.create(__nccwpck_require__(8610));
+util.inherits = __nccwpck_require__(2150);
+/*</replacement>*/
+
+/*<replacement>*/
+var debugUtil = __nccwpck_require__(3837);
+var debug = void 0;
+if (debugUtil && debugUtil.debuglog) {
+  debug = debugUtil.debuglog('stream');
+} else {
+  debug = function () {};
+}
+/*</replacement>*/
+
+var BufferList = __nccwpck_require__(5531);
+var destroyImpl = __nccwpck_require__(64);
+var StringDecoder;
+
+util.inherits(Readable, Stream);
+
+var kProxyEvents = ['error', 'close', 'destroy', 'pause', 'resume'];
+
+function prependListener(emitter, event, fn) {
+  // Sadly this is not cacheable as some libraries bundle their own
+  // event emitter implementation with them.
+  if (typeof emitter.prependListener === 'function') return emitter.prependListener(event, fn);
+
+  // This is a hack to make sure that our error handler is attached before any
+  // userland ones.  NEVER DO THIS. This is here only because this code needs
+  // to continue to work with older versions of Node.js that do not include
+  // the prependListener() method. The goal is to eventually remove this hack.
+  if (!emitter._events || !emitter._events[event]) emitter.on(event, fn);else if (isArray(emitter._events[event])) emitter._events[event].unshift(fn);else emitter._events[event] = [fn, emitter._events[event]];
+}
+
+function ReadableState(options, stream) {
+  Duplex = Duplex || __nccwpck_require__(914);
+
+  options = options || {};
+
+  // Duplex streams are both readable and writable, but share
+  // the same options object.
+  // However, some cases require setting options to different
+  // values for the readable and the writable sides of the duplex stream.
+  // These options can be provided separately as readableXXX and writableXXX.
+  var isDuplex = stream instanceof Duplex;
+
+  // object stream flag. Used to make read(n) ignore n and to
+  // make all the buffer merging and length checks go away
+  this.objectMode = !!options.objectMode;
+
+  if (isDuplex) this.objectMode = this.objectMode || !!options.readableObjectMode;
+
+  // the point at which it stops calling _read() to fill the buffer
+  // Note: 0 is a valid value, means "don't call _read preemptively ever"
+  var hwm = options.highWaterMark;
+  var readableHwm = options.readableHighWaterMark;
+  var defaultHwm = this.objectMode ? 16 : 16 * 1024;
+
+  if (hwm || hwm === 0) this.highWaterMark = hwm;else if (isDuplex && (readableHwm || readableHwm === 0)) this.highWaterMark = readableHwm;else this.highWaterMark = defaultHwm;
+
+  // cast to ints.
+  this.highWaterMark = Math.floor(this.highWaterMark);
+
+  // A linked list is used to store data chunks instead of an array because the
+  // linked list can remove elements from the beginning faster than
+  // array.shift()
+  this.buffer = new BufferList();
+  this.length = 0;
+  this.pipes = null;
+  this.pipesCount = 0;
+  this.flowing = null;
+  this.ended = false;
+  this.endEmitted = false;
+  this.reading = false;
+
+  // a flag to be able to tell if the event 'readable'/'data' is emitted
+  // immediately, or on a later tick.  We set this to true at first, because
+  // any actions that shouldn't happen until "later" should generally also
+  // not happen before the first read call.
+  this.sync = true;
+
+  // whenever we return null, then we set a flag to say
+  // that we're awaiting a 'readable' event emission.
+  this.needReadable = false;
+  this.emittedReadable = false;
+  this.readableListening = false;
+  this.resumeScheduled = false;
+
+  // has it been destroyed
+  this.destroyed = false;
+
+  // Crypto is kind of old and crusty.  Historically, its default string
+  // encoding is 'binary' so we have to make this configurable.
+  // Everything else in the universe uses 'utf8', though.
+  this.defaultEncoding = options.defaultEncoding || 'utf8';
+
+  // the number of writers that are awaiting a drain event in .pipe()s
+  this.awaitDrain = 0;
+
+  // if true, a maybeReadMore has been scheduled
+  this.readingMore = false;
+
+  this.decoder = null;
+  this.encoding = null;
+  if (options.encoding) {
+    if (!StringDecoder) StringDecoder = (__nccwpck_require__(7734)/* .StringDecoder */ .s);
+    this.decoder = new StringDecoder(options.encoding);
+    this.encoding = options.encoding;
+  }
+}
+
+function Readable(options) {
+  Duplex = Duplex || __nccwpck_require__(914);
+
+  if (!(this instanceof Readable)) return new Readable(options);
+
+  this._readableState = new ReadableState(options, this);
+
+  // legacy
+  this.readable = true;
+
+  if (options) {
+    if (typeof options.read === 'function') this._read = options.read;
+
+    if (typeof options.destroy === 'function') this._destroy = options.destroy;
+  }
+
+  Stream.call(this);
+}
+
+Object.defineProperty(Readable.prototype, 'destroyed', {
+  get: function () {
+    if (this._readableState === undefined) {
+      return false;
+    }
+    return this._readableState.destroyed;
+  },
+  set: function (value) {
+    // we ignore the value if the stream
+    // has not been initialized yet
+    if (!this._readableState) {
+      return;
+    }
+
+    // backward compatibility, the user is explicitly
+    // managing destroyed
+    this._readableState.destroyed = value;
+  }
+});
+
+Readable.prototype.destroy = destroyImpl.destroy;
+Readable.prototype._undestroy = destroyImpl.undestroy;
+Readable.prototype._destroy = function (err, cb) {
+  this.push(null);
+  cb(err);
+};
+
+// Manually shove something into the read() buffer.
+// This returns true if the highWaterMark has not been hit yet,
+// similar to how Writable.write() returns true if you should
+// write() some more.
+Readable.prototype.push = function (chunk, encoding) {
+  var state = this._readableState;
+  var skipChunkCheck;
+
+  if (!state.objectMode) {
+    if (typeof chunk === 'string') {
+      encoding = encoding || state.defaultEncoding;
+      if (encoding !== state.encoding) {
+        chunk = Buffer.from(chunk, encoding);
+        encoding = '';
+      }
+      skipChunkCheck = true;
+    }
+  } else {
+    skipChunkCheck = true;
+  }
+
+  return readableAddChunk(this, chunk, encoding, false, skipChunkCheck);
+};
+
+// Unshift should *always* be something directly out of read()
+Readable.prototype.unshift = function (chunk) {
+  return readableAddChunk(this, chunk, null, true, false);
+};
+
+function readableAddChunk(stream, chunk, encoding, addToFront, skipChunkCheck) {
+  var state = stream._readableState;
+  if (chunk === null) {
+    state.reading = false;
+    onEofChunk(stream, state);
+  } else {
+    var er;
+    if (!skipChunkCheck) er = chunkInvalid(state, chunk);
+    if (er) {
+      stream.emit('error', er);
+    } else if (state.objectMode || chunk && chunk.length > 0) {
+      if (typeof chunk !== 'string' && !state.objectMode && Object.getPrototypeOf(chunk) !== Buffer.prototype) {
+        chunk = _uint8ArrayToBuffer(chunk);
+      }
+
+      if (addToFront) {
+        if (state.endEmitted) stream.emit('error', new Error('stream.unshift() after end event'));else addChunk(stream, state, chunk, true);
+      } else if (state.ended) {
+        stream.emit('error', new Error('stream.push() after EOF'));
+      } else {
+        state.reading = false;
+        if (state.decoder && !encoding) {
+          chunk = state.decoder.write(chunk);
+          if (state.objectMode || chunk.length !== 0) addChunk(stream, state, chunk, false);else maybeReadMore(stream, state);
+        } else {
+          addChunk(stream, state, chunk, false);
+        }
+      }
+    } else if (!addToFront) {
+      state.reading = false;
+    }
+  }
+
+  return needMoreData(state);
+}
+
+function addChunk(stream, state, chunk, addToFront) {
+  if (state.flowing && state.length === 0 && !state.sync) {
+    stream.emit('data', chunk);
+    stream.read(0);
+  } else {
+    // update the buffer info.
+    state.length += state.objectMode ? 1 : chunk.length;
+    if (addToFront) state.buffer.unshift(chunk);else state.buffer.push(chunk);
+
+    if (state.needReadable) emitReadable(stream);
+  }
+  maybeReadMore(stream, state);
+}
+
+function chunkInvalid(state, chunk) {
+  var er;
+  if (!_isUint8Array(chunk) && typeof chunk !== 'string' && chunk !== undefined && !state.objectMode) {
+    er = new TypeError('Invalid non-string/buffer chunk');
+  }
+  return er;
+}
+
+// if it's past the high water mark, we can push in some more.
+// Also, if we have no data yet, we can stand some
+// more bytes.  This is to work around cases where hwm=0,
+// such as the repl.  Also, if the push() triggered a
+// readable event, and the user called read(largeNumber) such that
+// needReadable was set, then we ought to push more, so that another
+// 'readable' event will be triggered.
+function needMoreData(state) {
+  return !state.ended && (state.needReadable || state.length < state.highWaterMark || state.length === 0);
+}
+
+Readable.prototype.isPaused = function () {
+  return this._readableState.flowing === false;
+};
+
+// backwards compatibility.
+Readable.prototype.setEncoding = function (enc) {
+  if (!StringDecoder) StringDecoder = (__nccwpck_require__(7734)/* .StringDecoder */ .s);
+  this._readableState.decoder = new StringDecoder(enc);
+  this._readableState.encoding = enc;
+  return this;
+};
+
+// Don't raise the hwm > 8MB
+var MAX_HWM = 0x800000;
+function computeNewHighWaterMark(n) {
+  if (n >= MAX_HWM) {
+    n = MAX_HWM;
+  } else {
+    // Get the next highest power of 2 to prevent increasing hwm excessively in
+    // tiny amounts
+    n--;
+    n |= n >>> 1;
+    n |= n >>> 2;
+    n |= n >>> 4;
+    n |= n >>> 8;
+    n |= n >>> 16;
+    n++;
+  }
+  return n;
+}
+
+// This function is designed to be inlinable, so please take care when making
+// changes to the function body.
+function howMuchToRead(n, state) {
+  if (n <= 0 || state.length === 0 && state.ended) return 0;
+  if (state.objectMode) return 1;
+  if (n !== n) {
+    // Only flow one buffer at a time
+    if (state.flowing && state.length) return state.buffer.head.data.length;else return state.length;
+  }
+  // If we're asking for more than the current hwm, then raise the hwm.
+  if (n > state.highWaterMark) state.highWaterMark = computeNewHighWaterMark(n);
+  if (n <= state.length) return n;
+  // Don't have enough
+  if (!state.ended) {
+    state.needReadable = true;
+    return 0;
+  }
+  return state.length;
+}
+
+// you can override either this method, or the async _read(n) below.
+Readable.prototype.read = function (n) {
+  debug('read', n);
+  n = parseInt(n, 10);
+  var state = this._readableState;
+  var nOrig = n;
+
+  if (n !== 0) state.emittedReadable = false;
+
+  // if we're doing read(0) to trigger a readable event, but we
+  // already have a bunch of data in the buffer, then just trigger
+  // the 'readable' event and move on.
+  if (n === 0 && state.needReadable && (state.length >= state.highWaterMark || state.ended)) {
+    debug('read: emitReadable', state.length, state.ended);
+    if (state.length === 0 && state.ended) endReadable(this);else emitReadable(this);
+    return null;
+  }
+
+  n = howMuchToRead(n, state);
+
+  // if we've ended, and we're now clear, then finish it up.
+  if (n === 0 && state.ended) {
+    if (state.length === 0) endReadable(this);
+    return null;
+  }
+
+  // All the actual chunk generation logic needs to be
+  // *below* the call to _read.  The reason is that in certain
+  // synthetic stream cases, such as passthrough streams, _read
+  // may be a completely synchronous operation which may change
+  // the state of the read buffer, providing enough data when
+  // before there was *not* enough.
+  //
+  // So, the steps are:
+  // 1. Figure out what the state of things will be after we do
+  // a read from the buffer.
+  //
+  // 2. If that resulting state will trigger a _read, then call _read.
+  // Note that this may be asynchronous, or synchronous.  Yes, it is
+  // deeply ugly to write APIs this way, but that still doesn't mean
+  // that the Readable class should behave improperly, as streams are
+  // designed to be sync/async agnostic.
+  // Take note if the _read call is sync or async (ie, if the read call
+  // has returned yet), so that we know whether or not it's safe to emit
+  // 'readable' etc.
+  //
+  // 3. Actually pull the requested chunks out of the buffer and return.
+
+  // if we need a readable event, then we need to do some reading.
+  var doRead = state.needReadable;
+  debug('need readable', doRead);
+
+  // if we currently have less than the highWaterMark, then also read some
+  if (state.length === 0 || state.length - n < state.highWaterMark) {
+    doRead = true;
+    debug('length less than watermark', doRead);
+  }
+
+  // however, if we've ended, then there's no point, and if we're already
+  // reading, then it's unnecessary.
+  if (state.ended || state.reading) {
+    doRead = false;
+    debug('reading or ended', doRead);
+  } else if (doRead) {
+    debug('do read');
+    state.reading = true;
+    state.sync = true;
+    // if the length is currently zero, then we *need* a readable event.
+    if (state.length === 0) state.needReadable = true;
+    // call internal read method
+    this._read(state.highWaterMark);
+    state.sync = false;
+    // If _read pushed data synchronously, then `reading` will be false,
+    // and we need to re-evaluate how much data we can return to the user.
+    if (!state.reading) n = howMuchToRead(nOrig, state);
+  }
+
+  var ret;
+  if (n > 0) ret = fromList(n, state);else ret = null;
+
+  if (ret === null) {
+    state.needReadable = true;
+    n = 0;
+  } else {
+    state.length -= n;
+  }
+
+  if (state.length === 0) {
+    // If we have nothing in the buffer, then we want to know
+    // as soon as we *do* get something into the buffer.
+    if (!state.ended) state.needReadable = true;
+
+    // If we tried to read() past the EOF, then emit end on the next tick.
+    if (nOrig !== n && state.ended) endReadable(this);
+  }
+
+  if (ret !== null) this.emit('data', ret);
+
+  return ret;
+};
+
+function onEofChunk(stream, state) {
+  if (state.ended) return;
+  if (state.decoder) {
+    var chunk = state.decoder.end();
+    if (chunk && chunk.length) {
+      state.buffer.push(chunk);
+      state.length += state.objectMode ? 1 : chunk.length;
+    }
+  }
+  state.ended = true;
+
+  // emit 'readable' now to make sure it gets picked up.
+  emitReadable(stream);
+}
+
+// Don't emit readable right away in sync mode, because this can trigger
+// another read() call => stack overflow.  This way, it might trigger
+// a nextTick recursion warning, but that's not so bad.
+function emitReadable(stream) {
+  var state = stream._readableState;
+  state.needReadable = false;
+  if (!state.emittedReadable) {
+    debug('emitReadable', state.flowing);
+    state.emittedReadable = true;
+    if (state.sync) pna.nextTick(emitReadable_, stream);else emitReadable_(stream);
+  }
+}
+
+function emitReadable_(stream) {
+  debug('emit readable');
+  stream.emit('readable');
+  flow(stream);
+}
+
+// at this point, the user has presumably seen the 'readable' event,
+// and called read() to consume some data.  that may have triggered
+// in turn another _read(n) call, in which case reading = true if
+// it's in progress.
+// However, if we're not ended, or reading, and the length < hwm,
+// then go ahead and try to read some more preemptively.
+function maybeReadMore(stream, state) {
+  if (!state.readingMore) {
+    state.readingMore = true;
+    pna.nextTick(maybeReadMore_, stream, state);
+  }
+}
+
+function maybeReadMore_(stream, state) {
+  var len = state.length;
+  while (!state.reading && !state.flowing && !state.ended && state.length < state.highWaterMark) {
+    debug('maybeReadMore read 0');
+    stream.read(0);
+    if (len === state.length)
+      // didn't get any data, stop spinning.
+      break;else len = state.length;
+  }
+  state.readingMore = false;
+}
+
+// abstract method.  to be overridden in specific implementation classes.
+// call cb(er, data) where data is <= n in length.
+// for virtual (non-string, non-buffer) streams, "length" is somewhat
+// arbitrary, and perhaps not very meaningful.
+Readable.prototype._read = function (n) {
+  this.emit('error', new Error('_read() is not implemented'));
+};
+
+Readable.prototype.pipe = function (dest, pipeOpts) {
+  var src = this;
+  var state = this._readableState;
+
+  switch (state.pipesCount) {
+    case 0:
+      state.pipes = dest;
+      break;
+    case 1:
+      state.pipes = [state.pipes, dest];
+      break;
+    default:
+      state.pipes.push(dest);
+      break;
+  }
+  state.pipesCount += 1;
+  debug('pipe count=%d opts=%j', state.pipesCount, pipeOpts);
+
+  var doEnd = (!pipeOpts || pipeOpts.end !== false) && dest !== process.stdout && dest !== process.stderr;
+
+  var endFn = doEnd ? onend : unpipe;
+  if (state.endEmitted) pna.nextTick(endFn);else src.once('end', endFn);
+
+  dest.on('unpipe', onunpipe);
+  function onunpipe(readable, unpipeInfo) {
+    debug('onunpipe');
+    if (readable === src) {
+      if (unpipeInfo && unpipeInfo.hasUnpiped === false) {
+        unpipeInfo.hasUnpiped = true;
+        cleanup();
+      }
+    }
+  }
+
+  function onend() {
+    debug('onend');
+    dest.end();
+  }
+
+  // when the dest drains, it reduces the awaitDrain counter
+  // on the source.  This would be more elegant with a .once()
+  // handler in flow(), but adding and removing repeatedly is
+  // too slow.
+  var ondrain = pipeOnDrain(src);
+  dest.on('drain', ondrain);
+
+  var cleanedUp = false;
+  function cleanup() {
+    debug('cleanup');
+    // cleanup event handlers once the pipe is broken
+    dest.removeListener('close', onclose);
+    dest.removeListener('finish', onfinish);
+    dest.removeListener('drain', ondrain);
+    dest.removeListener('error', onerror);
+    dest.removeListener('unpipe', onunpipe);
+    src.removeListener('end', onend);
+    src.removeListener('end', unpipe);
+    src.removeListener('data', ondata);
+
+    cleanedUp = true;
+
+    // if the reader is waiting for a drain event from this
+    // specific writer, then it would cause it to never start
+    // flowing again.
+    // So, if this is awaiting a drain, then we just call it now.
+    // If we don't know, then assume that we are waiting for one.
+    if (state.awaitDrain && (!dest._writableState || dest._writableState.needDrain)) ondrain();
+  }
+
+  // If the user pushes more data while we're writing to dest then we'll end up
+  // in ondata again. However, we only want to increase awaitDrain once because
+  // dest will only emit one 'drain' event for the multiple writes.
+  // => Introduce a guard on increasing awaitDrain.
+  var increasedAwaitDrain = false;
+  src.on('data', ondata);
+  function ondata(chunk) {
+    debug('ondata');
+    increasedAwaitDrain = false;
+    var ret = dest.write(chunk);
+    if (false === ret && !increasedAwaitDrain) {
+      // If the user unpiped during `dest.write()`, it is possible
+      // to get stuck in a permanently paused state if that write
+      // also returned false.
+      // => Check whether `dest` is still a piping destination.
+      if ((state.pipesCount === 1 && state.pipes === dest || state.pipesCount > 1 && indexOf(state.pipes, dest) !== -1) && !cleanedUp) {
+        debug('false write response, pause', src._readableState.awaitDrain);
+        src._readableState.awaitDrain++;
+        increasedAwaitDrain = true;
+      }
+      src.pause();
+    }
+  }
+
+  // if the dest has an error, then stop piping into it.
+  // however, don't suppress the throwing behavior for this.
+  function onerror(er) {
+    debug('onerror', er);
+    unpipe();
+    dest.removeListener('error', onerror);
+    if (EElistenerCount(dest, 'error') === 0) dest.emit('error', er);
+  }
+
+  // Make sure our error handler is attached before userland ones.
+  prependListener(dest, 'error', onerror);
+
+  // Both close and finish should trigger unpipe, but only once.
+  function onclose() {
+    dest.removeListener('finish', onfinish);
+    unpipe();
+  }
+  dest.once('close', onclose);
+  function onfinish() {
+    debug('onfinish');
+    dest.removeListener('close', onclose);
+    unpipe();
+  }
+  dest.once('finish', onfinish);
+
+  function unpipe() {
+    debug('unpipe');
+    src.unpipe(dest);
+  }
+
+  // tell the dest that it's being piped to
+  dest.emit('pipe', src);
+
+  // start the flow if it hasn't been started already.
+  if (!state.flowing) {
+    debug('pipe resume');
+    src.resume();
+  }
+
+  return dest;
+};
+
+function pipeOnDrain(src) {
+  return function () {
+    var state = src._readableState;
+    debug('pipeOnDrain', state.awaitDrain);
+    if (state.awaitDrain) state.awaitDrain--;
+    if (state.awaitDrain === 0 && EElistenerCount(src, 'data')) {
+      state.flowing = true;
+      flow(src);
+    }
+  };
+}
+
+Readable.prototype.unpipe = function (dest) {
+  var state = this._readableState;
+  var unpipeInfo = { hasUnpiped: false };
+
+  // if we're not piping anywhere, then do nothing.
+  if (state.pipesCount === 0) return this;
+
+  // just one destination.  most common case.
+  if (state.pipesCount === 1) {
+    // passed in one, but it's not the right one.
+    if (dest && dest !== state.pipes) return this;
+
+    if (!dest) dest = state.pipes;
+
+    // got a match.
+    state.pipes = null;
+    state.pipesCount = 0;
+    state.flowing = false;
+    if (dest) dest.emit('unpipe', this, unpipeInfo);
+    return this;
+  }
+
+  // slow case. multiple pipe destinations.
+
+  if (!dest) {
+    // remove all.
+    var dests = state.pipes;
+    var len = state.pipesCount;
+    state.pipes = null;
+    state.pipesCount = 0;
+    state.flowing = false;
+
+    for (var i = 0; i < len; i++) {
+      dests[i].emit('unpipe', this, unpipeInfo);
+    }return this;
+  }
+
+  // try to find the right one.
+  var index = indexOf(state.pipes, dest);
+  if (index === -1) return this;
+
+  state.pipes.splice(index, 1);
+  state.pipesCount -= 1;
+  if (state.pipesCount === 1) state.pipes = state.pipes[0];
+
+  dest.emit('unpipe', this, unpipeInfo);
+
+  return this;
+};
+
+// set up data events if they are asked for
+// Ensure readable listeners eventually get something
+Readable.prototype.on = function (ev, fn) {
+  var res = Stream.prototype.on.call(this, ev, fn);
+
+  if (ev === 'data') {
+    // Start flowing on next tick if stream isn't explicitly paused
+    if (this._readableState.flowing !== false) this.resume();
+  } else if (ev === 'readable') {
+    var state = this._readableState;
+    if (!state.endEmitted && !state.readableListening) {
+      state.readableListening = state.needReadable = true;
+      state.emittedReadable = false;
+      if (!state.reading) {
+        pna.nextTick(nReadingNextTick, this);
+      } else if (state.length) {
+        emitReadable(this);
+      }
+    }
+  }
+
+  return res;
+};
+Readable.prototype.addListener = Readable.prototype.on;
+
+function nReadingNextTick(self) {
+  debug('readable nexttick read 0');
+  self.read(0);
+}
+
+// pause() and resume() are remnants of the legacy readable stream API
+// If the user uses them, then switch into old mode.
+Readable.prototype.resume = function () {
+  var state = this._readableState;
+  if (!state.flowing) {
+    debug('resume');
+    state.flowing = true;
+    resume(this, state);
+  }
+  return this;
+};
+
+function resume(stream, state) {
+  if (!state.resumeScheduled) {
+    state.resumeScheduled = true;
+    pna.nextTick(resume_, stream, state);
+  }
+}
+
+function resume_(stream, state) {
+  if (!state.reading) {
+    debug('resume read 0');
+    stream.read(0);
+  }
+
+  state.resumeScheduled = false;
+  state.awaitDrain = 0;
+  stream.emit('resume');
+  flow(stream);
+  if (state.flowing && !state.reading) stream.read(0);
+}
+
+Readable.prototype.pause = function () {
+  debug('call pause flowing=%j', this._readableState.flowing);
+  if (false !== this._readableState.flowing) {
+    debug('pause');
+    this._readableState.flowing = false;
+    this.emit('pause');
+  }
+  return this;
+};
+
+function flow(stream) {
+  var state = stream._readableState;
+  debug('flow', state.flowing);
+  while (state.flowing && stream.read() !== null) {}
+}
+
+// wrap an old-style stream as the async data source.
+// This is *not* part of the readable stream interface.
+// It is an ugly unfortunate mess of history.
+Readable.prototype.wrap = function (stream) {
+  var _this = this;
+
+  var state = this._readableState;
+  var paused = false;
+
+  stream.on('end', function () {
+    debug('wrapped end');
+    if (state.decoder && !state.ended) {
+      var chunk = state.decoder.end();
+      if (chunk && chunk.length) _this.push(chunk);
+    }
+
+    _this.push(null);
+  });
+
+  stream.on('data', function (chunk) {
+    debug('wrapped data');
+    if (state.decoder) chunk = state.decoder.write(chunk);
+
+    // don't skip over falsy values in objectMode
+    if (state.objectMode && (chunk === null || chunk === undefined)) return;else if (!state.objectMode && (!chunk || !chunk.length)) return;
+
+    var ret = _this.push(chunk);
+    if (!ret) {
+      paused = true;
+      stream.pause();
+    }
+  });
+
+  // proxy all the other methods.
+  // important when wrapping filters and duplexes.
+  for (var i in stream) {
+    if (this[i] === undefined && typeof stream[i] === 'function') {
+      this[i] = function (method) {
+        return function () {
+          return stream[method].apply(stream, arguments);
+        };
+      }(i);
+    }
+  }
+
+  // proxy certain important events.
+  for (var n = 0; n < kProxyEvents.length; n++) {
+    stream.on(kProxyEvents[n], this.emit.bind(this, kProxyEvents[n]));
+  }
+
+  // when we try to consume some more bytes, simply unpause the
+  // underlying stream.
+  this._read = function (n) {
+    debug('wrapped _read', n);
+    if (paused) {
+      paused = false;
+      stream.resume();
+    }
+  };
+
+  return this;
+};
+
+Object.defineProperty(Readable.prototype, 'readableHighWaterMark', {
+  // making it explicit this property is not enumerable
+  // because otherwise some prototype manipulation in
+  // userland will fail
+  enumerable: false,
+  get: function () {
+    return this._readableState.highWaterMark;
+  }
+});
+
+// exposed for testing purposes only.
+Readable._fromList = fromList;
+
+// Pluck off n bytes from an array of buffers.
+// Length is the combined lengths of all the buffers in the list.
+// This function is designed to be inlinable, so please take care when making
+// changes to the function body.
+function fromList(n, state) {
+  // nothing buffered
+  if (state.length === 0) return null;
+
+  var ret;
+  if (state.objectMode) ret = state.buffer.shift();else if (!n || n >= state.length) {
+    // read it all, truncate the list
+    if (state.decoder) ret = state.buffer.join('');else if (state.buffer.length === 1) ret = state.buffer.head.data;else ret = state.buffer.concat(state.length);
+    state.buffer.clear();
+  } else {
+    // read part of list
+    ret = fromListPartial(n, state.buffer, state.decoder);
+  }
+
+  return ret;
+}
+
+// Extracts only enough buffered data to satisfy the amount requested.
+// This function is designed to be inlinable, so please take care when making
+// changes to the function body.
+function fromListPartial(n, list, hasStrings) {
+  var ret;
+  if (n < list.head.data.length) {
+    // slice is the same for buffers and strings
+    ret = list.head.data.slice(0, n);
+    list.head.data = list.head.data.slice(n);
+  } else if (n === list.head.data.length) {
+    // first chunk is a perfect match
+    ret = list.shift();
+  } else {
+    // result spans more than one buffer
+    ret = hasStrings ? copyFromBufferString(n, list) : copyFromBuffer(n, list);
+  }
+  return ret;
+}
+
+// Copies a specified amount of characters from the list of buffered data
+// chunks.
+// This function is designed to be inlinable, so please take care when making
+// changes to the function body.
+function copyFromBufferString(n, list) {
+  var p = list.head;
+  var c = 1;
+  var ret = p.data;
+  n -= ret.length;
+  while (p = p.next) {
+    var str = p.data;
+    var nb = n > str.length ? str.length : n;
+    if (nb === str.length) ret += str;else ret += str.slice(0, n);
+    n -= nb;
+    if (n === 0) {
+      if (nb === str.length) {
+        ++c;
+        if (p.next) list.head = p.next;else list.head = list.tail = null;
+      } else {
+        list.head = p;
+        p.data = str.slice(nb);
+      }
+      break;
+    }
+    ++c;
+  }
+  list.length -= c;
+  return ret;
+}
+
+// Copies a specified amount of bytes from the list of buffered data chunks.
+// This function is designed to be inlinable, so please take care when making
+// changes to the function body.
+function copyFromBuffer(n, list) {
+  var ret = Buffer.allocUnsafe(n);
+  var p = list.head;
+  var c = 1;
+  p.data.copy(ret);
+  n -= p.data.length;
+  while (p = p.next) {
+    var buf = p.data;
+    var nb = n > buf.length ? buf.length : n;
+    buf.copy(ret, ret.length - n, 0, nb);
+    n -= nb;
+    if (n === 0) {
+      if (nb === buf.length) {
+        ++c;
+        if (p.next) list.head = p.next;else list.head = list.tail = null;
+      } else {
+        list.head = p;
+        p.data = buf.slice(nb);
+      }
+      break;
+    }
+    ++c;
+  }
+  list.length -= c;
+  return ret;
+}
+
+function endReadable(stream) {
+  var state = stream._readableState;
+
+  // If we get here before consuming all the bytes, then that is a
+  // bug in node.  Should never happen.
+  if (state.length > 0) throw new Error('"endReadable()" called on non-empty stream');
+
+  if (!state.endEmitted) {
+    state.ended = true;
+    pna.nextTick(endReadableNT, state, stream);
+  }
+}
+
+function endReadableNT(state, stream) {
+  // Check that we didn't get one last unshift.
+  if (!state.endEmitted && state.length === 0) {
+    state.endEmitted = true;
+    stream.readable = false;
+    stream.emit('end');
+  }
+}
+
+function indexOf(xs, x) {
+  for (var i = 0, l = xs.length; i < l; i++) {
+    if (xs[i] === x) return i;
+  }
+  return -1;
+}
+
+/***/ }),
+
+/***/ 576:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+// Copyright Joyent, Inc. and other Node contributors.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the
+// "Software"), to deal in the Software without restriction, including
+// without limitation the rights to use, copy, modify, merge, publish,
+// distribute, sublicense, and/or sell copies of the Software, and to permit
+// persons to whom the Software is furnished to do so, subject to the
+// following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+// USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+// a transform stream is a readable/writable stream where you do
+// something with the data.  Sometimes it's called a "filter",
+// but that's not a great name for it, since that implies a thing where
+// some bits pass through, and others are simply ignored.  (That would
+// be a valid example of a transform, of course.)
+//
+// While the output is causally related to the input, it's not a
+// necessarily symmetric or synchronous transformation.  For example,
+// a zlib stream might take multiple plain-text writes(), and then
+// emit a single compressed chunk some time in the future.
+//
+// Here's how this works:
+//
+// The Transform stream has all the aspects of the readable and writable
+// stream classes.  When you write(chunk), that calls _write(chunk,cb)
+// internally, and returns false if there's a lot of pending writes
+// buffered up.  When you call read(), that calls _read(n) until
+// there's enough pending readable data buffered up.
+//
+// In a transform stream, the written data is placed in a buffer.  When
+// _read(n) is called, it transforms the queued up data, calling the
+// buffered _write cb's as it consumes chunks.  If consuming a single
+// written chunk would result in multiple output chunks, then the first
+// outputted bit calls the readcb, and subsequent chunks just go into
+// the read buffer, and will cause it to emit 'readable' if necessary.
+//
+// This way, back-pressure is actually determined by the reading side,
+// since _read has to be called to start processing a new chunk.  However,
+// a pathological inflate type of transform can cause excessive buffering
+// here.  For example, imagine a stream where every byte of input is
+// interpreted as an integer from 0-255, and then results in that many
+// bytes of output.  Writing the 4 bytes {ff,ff,ff,ff} would result in
+// 1kb of data being output.  In this case, you could write a very small
+// amount of input, and end up with a very large amount of output.  In
+// such a pathological inflating mechanism, there'd be no way to tell
+// the system to stop doing the transform.  A single 4MB write could
+// cause the system to run out of memory.
+//
+// However, even in such a pathological case, only a single written chunk
+// would be consumed, and then the rest would wait (un-transformed) until
+// the results of the previous transformed chunk were consumed.
+
+
+
+module.exports = Transform;
+
+var Duplex = __nccwpck_require__(914);
+
+/*<replacement>*/
+var util = Object.create(__nccwpck_require__(8610));
+util.inherits = __nccwpck_require__(2150);
+/*</replacement>*/
+
+util.inherits(Transform, Duplex);
+
+function afterTransform(er, data) {
+  var ts = this._transformState;
+  ts.transforming = false;
+
+  var cb = ts.writecb;
+
+  if (!cb) {
+    return this.emit('error', new Error('write callback called multiple times'));
+  }
+
+  ts.writechunk = null;
+  ts.writecb = null;
+
+  if (data != null) // single equals check for both `null` and `undefined`
+    this.push(data);
+
+  cb(er);
+
+  var rs = this._readableState;
+  rs.reading = false;
+  if (rs.needReadable || rs.length < rs.highWaterMark) {
+    this._read(rs.highWaterMark);
+  }
+}
+
+function Transform(options) {
+  if (!(this instanceof Transform)) return new Transform(options);
+
+  Duplex.call(this, options);
+
+  this._transformState = {
+    afterTransform: afterTransform.bind(this),
+    needTransform: false,
+    transforming: false,
+    writecb: null,
+    writechunk: null,
+    writeencoding: null
+  };
+
+  // start out asking for a readable event once data is transformed.
+  this._readableState.needReadable = true;
+
+  // we have implemented the _read method, and done the other things
+  // that Readable wants before the first _read call, so unset the
+  // sync guard flag.
+  this._readableState.sync = false;
+
+  if (options) {
+    if (typeof options.transform === 'function') this._transform = options.transform;
+
+    if (typeof options.flush === 'function') this._flush = options.flush;
+  }
+
+  // When the writable side finishes, then flush out anything remaining.
+  this.on('prefinish', prefinish);
+}
+
+function prefinish() {
+  var _this = this;
+
+  if (typeof this._flush === 'function') {
+    this._flush(function (er, data) {
+      done(_this, er, data);
+    });
+  } else {
+    done(this, null, null);
+  }
+}
+
+Transform.prototype.push = function (chunk, encoding) {
+  this._transformState.needTransform = false;
+  return Duplex.prototype.push.call(this, chunk, encoding);
+};
+
+// This is the part where you do stuff!
+// override this function in implementation classes.
+// 'chunk' is an input chunk.
+//
+// Call `push(newChunk)` to pass along transformed output
+// to the readable side.  You may call 'push' zero or more times.
+//
+// Call `cb(err)` when you are done with this chunk.  If you pass
+// an error, then that'll put the hurt on the whole operation.  If you
+// never call cb(), then you'll never get another chunk.
+Transform.prototype._transform = function (chunk, encoding, cb) {
+  throw new Error('_transform() is not implemented');
+};
+
+Transform.prototype._write = function (chunk, encoding, cb) {
+  var ts = this._transformState;
+  ts.writecb = cb;
+  ts.writechunk = chunk;
+  ts.writeencoding = encoding;
+  if (!ts.transforming) {
+    var rs = this._readableState;
+    if (ts.needTransform || rs.needReadable || rs.length < rs.highWaterMark) this._read(rs.highWaterMark);
+  }
+};
+
+// Doesn't matter what the args are here.
+// _transform does all the work.
+// That we got here means that the readable side wants more data.
+Transform.prototype._read = function (n) {
+  var ts = this._transformState;
+
+  if (ts.writechunk !== null && ts.writecb && !ts.transforming) {
+    ts.transforming = true;
+    this._transform(ts.writechunk, ts.writeencoding, ts.afterTransform);
+  } else {
+    // mark that we need a transform, so that any data that comes in
+    // will get processed, now that we've asked for it.
+    ts.needTransform = true;
+  }
+};
+
+Transform.prototype._destroy = function (err, cb) {
+  var _this2 = this;
+
+  Duplex.prototype._destroy.call(this, err, function (err2) {
+    cb(err2);
+    _this2.emit('close');
+  });
+};
+
+function done(stream, er, data) {
+  if (er) return stream.emit('error', er);
+
+  if (data != null) // single equals check for both `null` and `undefined`
+    stream.push(data);
+
+  // if there's nothing in the write buffer, then that means
+  // that nothing more will ever be provided
+  if (stream._writableState.length) throw new Error('Calling transform done when ws.length != 0');
+
+  if (stream._transformState.transforming) throw new Error('Calling transform done when still transforming');
+
+  return stream.push(null);
+}
+
+/***/ }),
+
+/***/ 8549:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+// Copyright Joyent, Inc. and other Node contributors.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the
+// "Software"), to deal in the Software without restriction, including
+// without limitation the rights to use, copy, modify, merge, publish,
+// distribute, sublicense, and/or sell copies of the Software, and to permit
+// persons to whom the Software is furnished to do so, subject to the
+// following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+// USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+// A bit simpler than readable streams.
+// Implement an async ._write(chunk, encoding, cb), and it'll handle all
+// the drain event emission and buffering.
+
+
+
+/*<replacement>*/
+
+var pna = __nccwpck_require__(2927);
+/*</replacement>*/
+
+module.exports = Writable;
+
+/* <replacement> */
+function WriteReq(chunk, encoding, cb) {
+  this.chunk = chunk;
+  this.encoding = encoding;
+  this.callback = cb;
+  this.next = null;
+}
+
+// It seems a linked list but it is not
+// there will be only 2 of these for each stream
+function CorkedRequest(state) {
+  var _this = this;
+
+  this.next = null;
+  this.entry = null;
+  this.finish = function () {
+    onCorkedFinish(_this, state);
+  };
+}
+/* </replacement> */
+
+/*<replacement>*/
+var asyncWrite = !process.browser && ['v0.10', 'v0.9.'].indexOf(process.version.slice(0, 5)) > -1 ? setImmediate : pna.nextTick;
+/*</replacement>*/
+
+/*<replacement>*/
+var Duplex;
+/*</replacement>*/
+
+Writable.WritableState = WritableState;
+
+/*<replacement>*/
+var util = Object.create(__nccwpck_require__(8610));
+util.inherits = __nccwpck_require__(2150);
+/*</replacement>*/
+
+/*<replacement>*/
+var internalUtil = {
+  deprecate: __nccwpck_require__(5362)
+};
+/*</replacement>*/
+
+/*<replacement>*/
+var Stream = __nccwpck_require__(6268);
+/*</replacement>*/
+
+/*<replacement>*/
+
+var Buffer = (__nccwpck_require__(582).Buffer);
+var OurUint8Array = global.Uint8Array || function () {};
+function _uint8ArrayToBuffer(chunk) {
+  return Buffer.from(chunk);
+}
+function _isUint8Array(obj) {
+  return Buffer.isBuffer(obj) || obj instanceof OurUint8Array;
+}
+
+/*</replacement>*/
+
+var destroyImpl = __nccwpck_require__(64);
+
+util.inherits(Writable, Stream);
+
+function nop() {}
+
+function WritableState(options, stream) {
+  Duplex = Duplex || __nccwpck_require__(914);
+
+  options = options || {};
+
+  // Duplex streams are both readable and writable, but share
+  // the same options object.
+  // However, some cases require setting options to different
+  // values for the readable and the writable sides of the duplex stream.
+  // These options can be provided separately as readableXXX and writableXXX.
+  var isDuplex = stream instanceof Duplex;
+
+  // object stream flag to indicate whether or not this stream
+  // contains buffers or objects.
+  this.objectMode = !!options.objectMode;
+
+  if (isDuplex) this.objectMode = this.objectMode || !!options.writableObjectMode;
+
+  // the point at which write() starts returning false
+  // Note: 0 is a valid value, means that we always return false if
+  // the entire buffer is not flushed immediately on write()
+  var hwm = options.highWaterMark;
+  var writableHwm = options.writableHighWaterMark;
+  var defaultHwm = this.objectMode ? 16 : 16 * 1024;
+
+  if (hwm || hwm === 0) this.highWaterMark = hwm;else if (isDuplex && (writableHwm || writableHwm === 0)) this.highWaterMark = writableHwm;else this.highWaterMark = defaultHwm;
+
+  // cast to ints.
+  this.highWaterMark = Math.floor(this.highWaterMark);
+
+  // if _final has been called
+  this.finalCalled = false;
+
+  // drain event flag.
+  this.needDrain = false;
+  // at the start of calling end()
+  this.ending = false;
+  // when end() has been called, and returned
+  this.ended = false;
+  // when 'finish' is emitted
+  this.finished = false;
+
+  // has it been destroyed
+  this.destroyed = false;
+
+  // should we decode strings into buffers before passing to _write?
+  // this is here so that some node-core streams can optimize string
+  // handling at a lower level.
+  var noDecode = options.decodeStrings === false;
+  this.decodeStrings = !noDecode;
+
+  // Crypto is kind of old and crusty.  Historically, its default string
+  // encoding is 'binary' so we have to make this configurable.
+  // Everything else in the universe uses 'utf8', though.
+  this.defaultEncoding = options.defaultEncoding || 'utf8';
+
+  // not an actual buffer we keep track of, but a measurement
+  // of how much we're waiting to get pushed to some underlying
+  // socket or file.
+  this.length = 0;
+
+  // a flag to see when we're in the middle of a write.
+  this.writing = false;
+
+  // when true all writes will be buffered until .uncork() call
+  this.corked = 0;
+
+  // a flag to be able to tell if the onwrite cb is called immediately,
+  // or on a later tick.  We set this to true at first, because any
+  // actions that shouldn't happen until "later" should generally also
+  // not happen before the first write call.
+  this.sync = true;
+
+  // a flag to know if we're processing previously buffered items, which
+  // may call the _write() callback in the same tick, so that we don't
+  // end up in an overlapped onwrite situation.
+  this.bufferProcessing = false;
+
+  // the callback that's passed to _write(chunk,cb)
+  this.onwrite = function (er) {
+    onwrite(stream, er);
+  };
+
+  // the callback that the user supplies to write(chunk,encoding,cb)
+  this.writecb = null;
+
+  // the amount that is being written when _write is called.
+  this.writelen = 0;
+
+  this.bufferedRequest = null;
+  this.lastBufferedRequest = null;
+
+  // number of pending user-supplied write callbacks
+  // this must be 0 before 'finish' can be emitted
+  this.pendingcb = 0;
+
+  // emit prefinish if the only thing we're waiting for is _write cbs
+  // This is relevant for synchronous Transform streams
+  this.prefinished = false;
+
+  // True if the error was already emitted and should not be thrown again
+  this.errorEmitted = false;
+
+  // count buffered requests
+  this.bufferedRequestCount = 0;
+
+  // allocate the first CorkedRequest, there is always
+  // one allocated and free to use, and we maintain at most two
+  this.corkedRequestsFree = new CorkedRequest(this);
+}
+
+WritableState.prototype.getBuffer = function getBuffer() {
+  var current = this.bufferedRequest;
+  var out = [];
+  while (current) {
+    out.push(current);
+    current = current.next;
+  }
+  return out;
+};
+
+(function () {
+  try {
+    Object.defineProperty(WritableState.prototype, 'buffer', {
+      get: internalUtil.deprecate(function () {
+        return this.getBuffer();
+      }, '_writableState.buffer is deprecated. Use _writableState.getBuffer ' + 'instead.', 'DEP0003')
+    });
+  } catch (_) {}
+})();
+
+// Test _writableState for inheritance to account for Duplex streams,
+// whose prototype chain only points to Readable.
+var realHasInstance;
+if (typeof Symbol === 'function' && Symbol.hasInstance && typeof Function.prototype[Symbol.hasInstance] === 'function') {
+  realHasInstance = Function.prototype[Symbol.hasInstance];
+  Object.defineProperty(Writable, Symbol.hasInstance, {
+    value: function (object) {
+      if (realHasInstance.call(this, object)) return true;
+      if (this !== Writable) return false;
+
+      return object && object._writableState instanceof WritableState;
+    }
+  });
+} else {
+  realHasInstance = function (object) {
+    return object instanceof this;
+  };
+}
+
+function Writable(options) {
+  Duplex = Duplex || __nccwpck_require__(914);
+
+  // Writable ctor is applied to Duplexes, too.
+  // `realHasInstance` is necessary because using plain `instanceof`
+  // would return false, as no `_writableState` property is attached.
+
+  // Trying to use the custom `instanceof` for Writable here will also break the
+  // Node.js LazyTransform implementation, which has a non-trivial getter for
+  // `_writableState` that would lead to infinite recursion.
+  if (!realHasInstance.call(Writable, this) && !(this instanceof Duplex)) {
+    return new Writable(options);
+  }
+
+  this._writableState = new WritableState(options, this);
+
+  // legacy.
+  this.writable = true;
+
+  if (options) {
+    if (typeof options.write === 'function') this._write = options.write;
+
+    if (typeof options.writev === 'function') this._writev = options.writev;
+
+    if (typeof options.destroy === 'function') this._destroy = options.destroy;
+
+    if (typeof options.final === 'function') this._final = options.final;
+  }
+
+  Stream.call(this);
+}
+
+// Otherwise people can pipe Writable streams, which is just wrong.
+Writable.prototype.pipe = function () {
+  this.emit('error', new Error('Cannot pipe, not readable'));
+};
+
+function writeAfterEnd(stream, cb) {
+  var er = new Error('write after end');
+  // TODO: defer error events consistently everywhere, not just the cb
+  stream.emit('error', er);
+  pna.nextTick(cb, er);
+}
+
+// Checks that a user-supplied chunk is valid, especially for the particular
+// mode the stream is in. Currently this means that `null` is never accepted
+// and undefined/non-string values are only allowed in object mode.
+function validChunk(stream, state, chunk, cb) {
+  var valid = true;
+  var er = false;
+
+  if (chunk === null) {
+    er = new TypeError('May not write null values to stream');
+  } else if (typeof chunk !== 'string' && chunk !== undefined && !state.objectMode) {
+    er = new TypeError('Invalid non-string/buffer chunk');
+  }
+  if (er) {
+    stream.emit('error', er);
+    pna.nextTick(cb, er);
+    valid = false;
+  }
+  return valid;
+}
+
+Writable.prototype.write = function (chunk, encoding, cb) {
+  var state = this._writableState;
+  var ret = false;
+  var isBuf = !state.objectMode && _isUint8Array(chunk);
+
+  if (isBuf && !Buffer.isBuffer(chunk)) {
+    chunk = _uint8ArrayToBuffer(chunk);
+  }
+
+  if (typeof encoding === 'function') {
+    cb = encoding;
+    encoding = null;
+  }
+
+  if (isBuf) encoding = 'buffer';else if (!encoding) encoding = state.defaultEncoding;
+
+  if (typeof cb !== 'function') cb = nop;
+
+  if (state.ended) writeAfterEnd(this, cb);else if (isBuf || validChunk(this, state, chunk, cb)) {
+    state.pendingcb++;
+    ret = writeOrBuffer(this, state, isBuf, chunk, encoding, cb);
+  }
+
+  return ret;
+};
+
+Writable.prototype.cork = function () {
+  var state = this._writableState;
+
+  state.corked++;
+};
+
+Writable.prototype.uncork = function () {
+  var state = this._writableState;
+
+  if (state.corked) {
+    state.corked--;
+
+    if (!state.writing && !state.corked && !state.finished && !state.bufferProcessing && state.bufferedRequest) clearBuffer(this, state);
+  }
+};
+
+Writable.prototype.setDefaultEncoding = function setDefaultEncoding(encoding) {
+  // node::ParseEncoding() requires lower case.
+  if (typeof encoding === 'string') encoding = encoding.toLowerCase();
+  if (!(['hex', 'utf8', 'utf-8', 'ascii', 'binary', 'base64', 'ucs2', 'ucs-2', 'utf16le', 'utf-16le', 'raw'].indexOf((encoding + '').toLowerCase()) > -1)) throw new TypeError('Unknown encoding: ' + encoding);
+  this._writableState.defaultEncoding = encoding;
+  return this;
+};
+
+function decodeChunk(state, chunk, encoding) {
+  if (!state.objectMode && state.decodeStrings !== false && typeof chunk === 'string') {
+    chunk = Buffer.from(chunk, encoding);
+  }
+  return chunk;
+}
+
+Object.defineProperty(Writable.prototype, 'writableHighWaterMark', {
+  // making it explicit this property is not enumerable
+  // because otherwise some prototype manipulation in
+  // userland will fail
+  enumerable: false,
+  get: function () {
+    return this._writableState.highWaterMark;
+  }
+});
+
+// if we're already writing something, then just put this
+// in the queue, and wait our turn.  Otherwise, call _write
+// If we return false, then we need a drain event, so set that flag.
+function writeOrBuffer(stream, state, isBuf, chunk, encoding, cb) {
+  if (!isBuf) {
+    var newChunk = decodeChunk(state, chunk, encoding);
+    if (chunk !== newChunk) {
+      isBuf = true;
+      encoding = 'buffer';
+      chunk = newChunk;
+    }
+  }
+  var len = state.objectMode ? 1 : chunk.length;
+
+  state.length += len;
+
+  var ret = state.length < state.highWaterMark;
+  // we must ensure that previous needDrain will not be reset to false.
+  if (!ret) state.needDrain = true;
+
+  if (state.writing || state.corked) {
+    var last = state.lastBufferedRequest;
+    state.lastBufferedRequest = {
+      chunk: chunk,
+      encoding: encoding,
+      isBuf: isBuf,
+      callback: cb,
+      next: null
+    };
+    if (last) {
+      last.next = state.lastBufferedRequest;
+    } else {
+      state.bufferedRequest = state.lastBufferedRequest;
+    }
+    state.bufferedRequestCount += 1;
+  } else {
+    doWrite(stream, state, false, len, chunk, encoding, cb);
+  }
+
+  return ret;
+}
+
+function doWrite(stream, state, writev, len, chunk, encoding, cb) {
+  state.writelen = len;
+  state.writecb = cb;
+  state.writing = true;
+  state.sync = true;
+  if (writev) stream._writev(chunk, state.onwrite);else stream._write(chunk, encoding, state.onwrite);
+  state.sync = false;
+}
+
+function onwriteError(stream, state, sync, er, cb) {
+  --state.pendingcb;
+
+  if (sync) {
+    // defer the callback if we are being called synchronously
+    // to avoid piling up things on the stack
+    pna.nextTick(cb, er);
+    // this can emit finish, and it will always happen
+    // after error
+    pna.nextTick(finishMaybe, stream, state);
+    stream._writableState.errorEmitted = true;
+    stream.emit('error', er);
+  } else {
+    // the caller expect this to happen before if
+    // it is async
+    cb(er);
+    stream._writableState.errorEmitted = true;
+    stream.emit('error', er);
+    // this can emit finish, but finish must
+    // always follow error
+    finishMaybe(stream, state);
+  }
+}
+
+function onwriteStateUpdate(state) {
+  state.writing = false;
+  state.writecb = null;
+  state.length -= state.writelen;
+  state.writelen = 0;
+}
+
+function onwrite(stream, er) {
+  var state = stream._writableState;
+  var sync = state.sync;
+  var cb = state.writecb;
+
+  onwriteStateUpdate(state);
+
+  if (er) onwriteError(stream, state, sync, er, cb);else {
+    // Check if we're actually ready to finish, but don't emit yet
+    var finished = needFinish(state);
+
+    if (!finished && !state.corked && !state.bufferProcessing && state.bufferedRequest) {
+      clearBuffer(stream, state);
+    }
+
+    if (sync) {
+      /*<replacement>*/
+      asyncWrite(afterWrite, stream, state, finished, cb);
+      /*</replacement>*/
+    } else {
+      afterWrite(stream, state, finished, cb);
+    }
+  }
+}
+
+function afterWrite(stream, state, finished, cb) {
+  if (!finished) onwriteDrain(stream, state);
+  state.pendingcb--;
+  cb();
+  finishMaybe(stream, state);
+}
+
+// Must force callback to be called on nextTick, so that we don't
+// emit 'drain' before the write() consumer gets the 'false' return
+// value, and has a chance to attach a 'drain' listener.
+function onwriteDrain(stream, state) {
+  if (state.length === 0 && state.needDrain) {
+    state.needDrain = false;
+    stream.emit('drain');
+  }
+}
+
+// if there's something in the buffer waiting, then process it
+function clearBuffer(stream, state) {
+  state.bufferProcessing = true;
+  var entry = state.bufferedRequest;
+
+  if (stream._writev && entry && entry.next) {
+    // Fast case, write everything using _writev()
+    var l = state.bufferedRequestCount;
+    var buffer = new Array(l);
+    var holder = state.corkedRequestsFree;
+    holder.entry = entry;
+
+    var count = 0;
+    var allBuffers = true;
+    while (entry) {
+      buffer[count] = entry;
+      if (!entry.isBuf) allBuffers = false;
+      entry = entry.next;
+      count += 1;
+    }
+    buffer.allBuffers = allBuffers;
+
+    doWrite(stream, state, true, state.length, buffer, '', holder.finish);
+
+    // doWrite is almost always async, defer these to save a bit of time
+    // as the hot path ends with doWrite
+    state.pendingcb++;
+    state.lastBufferedRequest = null;
+    if (holder.next) {
+      state.corkedRequestsFree = holder.next;
+      holder.next = null;
+    } else {
+      state.corkedRequestsFree = new CorkedRequest(state);
+    }
+    state.bufferedRequestCount = 0;
+  } else {
+    // Slow case, write chunks one-by-one
+    while (entry) {
+      var chunk = entry.chunk;
+      var encoding = entry.encoding;
+      var cb = entry.callback;
+      var len = state.objectMode ? 1 : chunk.length;
+
+      doWrite(stream, state, false, len, chunk, encoding, cb);
+      entry = entry.next;
+      state.bufferedRequestCount--;
+      // if we didn't call the onwrite immediately, then
+      // it means that we need to wait until it does.
+      // also, that means that the chunk and cb are currently
+      // being processed, so move the buffer counter past them.
+      if (state.writing) {
+        break;
+      }
+    }
+
+    if (entry === null) state.lastBufferedRequest = null;
+  }
+
+  state.bufferedRequest = entry;
+  state.bufferProcessing = false;
+}
+
+Writable.prototype._write = function (chunk, encoding, cb) {
+  cb(new Error('_write() is not implemented'));
+};
+
+Writable.prototype._writev = null;
+
+Writable.prototype.end = function (chunk, encoding, cb) {
+  var state = this._writableState;
+
+  if (typeof chunk === 'function') {
+    cb = chunk;
+    chunk = null;
+    encoding = null;
+  } else if (typeof encoding === 'function') {
+    cb = encoding;
+    encoding = null;
+  }
+
+  if (chunk !== null && chunk !== undefined) this.write(chunk, encoding);
+
+  // .end() fully uncorks
+  if (state.corked) {
+    state.corked = 1;
+    this.uncork();
+  }
+
+  // ignore unnecessary end() calls.
+  if (!state.ending && !state.finished) endWritable(this, state, cb);
+};
+
+function needFinish(state) {
+  return state.ending && state.length === 0 && state.bufferedRequest === null && !state.finished && !state.writing;
+}
+function callFinal(stream, state) {
+  stream._final(function (err) {
+    state.pendingcb--;
+    if (err) {
+      stream.emit('error', err);
+    }
+    state.prefinished = true;
+    stream.emit('prefinish');
+    finishMaybe(stream, state);
+  });
+}
+function prefinish(stream, state) {
+  if (!state.prefinished && !state.finalCalled) {
+    if (typeof stream._final === 'function') {
+      state.pendingcb++;
+      state.finalCalled = true;
+      pna.nextTick(callFinal, stream, state);
+    } else {
+      state.prefinished = true;
+      stream.emit('prefinish');
+    }
+  }
+}
+
+function finishMaybe(stream, state) {
+  var need = needFinish(state);
+  if (need) {
+    prefinish(stream, state);
+    if (state.pendingcb === 0) {
+      state.finished = true;
+      stream.emit('finish');
+    }
+  }
+  return need;
+}
+
+function endWritable(stream, state, cb) {
+  state.ending = true;
+  finishMaybe(stream, state);
+  if (cb) {
+    if (state.finished) pna.nextTick(cb);else stream.once('finish', cb);
+  }
+  state.ended = true;
+  stream.writable = false;
+}
+
+function onCorkedFinish(corkReq, state, err) {
+  var entry = corkReq.entry;
+  corkReq.entry = null;
+  while (entry) {
+    var cb = entry.callback;
+    state.pendingcb--;
+    cb(err);
+    entry = entry.next;
+  }
+  if (state.corkedRequestsFree) {
+    state.corkedRequestsFree.next = corkReq;
+  } else {
+    state.corkedRequestsFree = corkReq;
+  }
+}
+
+Object.defineProperty(Writable.prototype, 'destroyed', {
+  get: function () {
+    if (this._writableState === undefined) {
+      return false;
+    }
+    return this._writableState.destroyed;
+  },
+  set: function (value) {
+    // we ignore the value if the stream
+    // has not been initialized yet
+    if (!this._writableState) {
+      return;
+    }
+
+    // backward compatibility, the user is explicitly
+    // managing destroyed
+    this._writableState.destroyed = value;
+  }
+});
+
+Writable.prototype.destroy = destroyImpl.destroy;
+Writable.prototype._undestroy = destroyImpl.undestroy;
+Writable.prototype._destroy = function (err, cb) {
+  this.end();
+  cb(err);
+};
+
+/***/ }),
+
+/***/ 5531:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+var Buffer = (__nccwpck_require__(582).Buffer);
+var util = __nccwpck_require__(3837);
+
+function copyBuffer(src, target, offset) {
+  src.copy(target, offset);
+}
+
+module.exports = function () {
+  function BufferList() {
+    _classCallCheck(this, BufferList);
+
+    this.head = null;
+    this.tail = null;
+    this.length = 0;
+  }
+
+  BufferList.prototype.push = function push(v) {
+    var entry = { data: v, next: null };
+    if (this.length > 0) this.tail.next = entry;else this.head = entry;
+    this.tail = entry;
+    ++this.length;
+  };
+
+  BufferList.prototype.unshift = function unshift(v) {
+    var entry = { data: v, next: this.head };
+    if (this.length === 0) this.tail = entry;
+    this.head = entry;
+    ++this.length;
+  };
+
+  BufferList.prototype.shift = function shift() {
+    if (this.length === 0) return;
+    var ret = this.head.data;
+    if (this.length === 1) this.head = this.tail = null;else this.head = this.head.next;
+    --this.length;
+    return ret;
+  };
+
+  BufferList.prototype.clear = function clear() {
+    this.head = this.tail = null;
+    this.length = 0;
+  };
+
+  BufferList.prototype.join = function join(s) {
+    if (this.length === 0) return '';
+    var p = this.head;
+    var ret = '' + p.data;
+    while (p = p.next) {
+      ret += s + p.data;
+    }return ret;
+  };
+
+  BufferList.prototype.concat = function concat(n) {
+    if (this.length === 0) return Buffer.alloc(0);
+    if (this.length === 1) return this.head.data;
+    var ret = Buffer.allocUnsafe(n >>> 0);
+    var p = this.head;
+    var i = 0;
+    while (p) {
+      copyBuffer(p.data, ret, i);
+      i += p.data.length;
+      p = p.next;
+    }
+    return ret;
+  };
+
+  return BufferList;
+}();
+
+if (util && util.inspect && util.inspect.custom) {
+  module.exports.prototype[util.inspect.custom] = function () {
+    var obj = util.inspect({ length: this.length });
+    return this.constructor.name + ' ' + obj;
+  };
+}
+
+/***/ }),
+
+/***/ 64:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+
+
+/*<replacement>*/
+
+var pna = __nccwpck_require__(2927);
+/*</replacement>*/
+
+// undocumented cb() API, needed for core, not for public API
+function destroy(err, cb) {
+  var _this = this;
+
+  var readableDestroyed = this._readableState && this._readableState.destroyed;
+  var writableDestroyed = this._writableState && this._writableState.destroyed;
+
+  if (readableDestroyed || writableDestroyed) {
+    if (cb) {
+      cb(err);
+    } else if (err && (!this._writableState || !this._writableState.errorEmitted)) {
+      pna.nextTick(emitErrorNT, this, err);
+    }
+    return this;
+  }
+
+  // we set destroyed to true before firing error callbacks in order
+  // to make it re-entrance safe in case destroy() is called within callbacks
+
+  if (this._readableState) {
+    this._readableState.destroyed = true;
+  }
+
+  // if this is a duplex stream mark the writable part as destroyed as well
+  if (this._writableState) {
+    this._writableState.destroyed = true;
+  }
+
+  this._destroy(err || null, function (err) {
+    if (!cb && err) {
+      pna.nextTick(emitErrorNT, _this, err);
+      if (_this._writableState) {
+        _this._writableState.errorEmitted = true;
+      }
+    } else if (cb) {
+      cb(err);
+    }
+  });
+
+  return this;
+}
+
+function undestroy() {
+  if (this._readableState) {
+    this._readableState.destroyed = false;
+    this._readableState.reading = false;
+    this._readableState.ended = false;
+    this._readableState.endEmitted = false;
+  }
+
+  if (this._writableState) {
+    this._writableState.destroyed = false;
+    this._writableState.ended = false;
+    this._writableState.ending = false;
+    this._writableState.finished = false;
+    this._writableState.errorEmitted = false;
+  }
+}
+
+function emitErrorNT(self, err) {
+  self.emit('error', err);
+}
+
+module.exports = {
+  destroy: destroy,
+  undestroy: undestroy
+};
+
+/***/ }),
+
+/***/ 6268:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+module.exports = __nccwpck_require__(2781);
+
+
+/***/ }),
+
+/***/ 3901:
+/***/ ((module, exports, __nccwpck_require__) => {
+
+var Stream = __nccwpck_require__(2781);
+if (process.env.READABLE_STREAM === 'disable' && Stream) {
+  module.exports = Stream;
+  exports = module.exports = Stream.Readable;
+  exports.Readable = Stream.Readable;
+  exports.Writable = Stream.Writable;
+  exports.Duplex = Stream.Duplex;
+  exports.Transform = Stream.Transform;
+  exports.PassThrough = Stream.PassThrough;
+  exports.Stream = Stream;
+} else {
+  exports = module.exports = __nccwpck_require__(7640);
+  exports.Stream = Stream || exports;
+  exports.Readable = exports;
+  exports.Writable = __nccwpck_require__(8549);
+  exports.Duplex = __nccwpck_require__(914);
+  exports.Transform = __nccwpck_require__(576);
+  exports.PassThrough = __nccwpck_require__(5140);
+}
+
+
+/***/ }),
+
+/***/ 582:
+/***/ ((module, exports, __nccwpck_require__) => {
+
+/* eslint-disable node/no-deprecated-api */
+var buffer = __nccwpck_require__(4300)
+var Buffer = buffer.Buffer
+
+// alternative to using Object.keys for old browsers
+function copyProps (src, dst) {
+  for (var key in src) {
+    dst[key] = src[key]
+  }
+}
+if (Buffer.from && Buffer.alloc && Buffer.allocUnsafe && Buffer.allocUnsafeSlow) {
+  module.exports = buffer
+} else {
+  // Copy properties from require('buffer')
+  copyProps(buffer, exports)
+  exports.Buffer = SafeBuffer
+}
+
+function SafeBuffer (arg, encodingOrOffset, length) {
+  return Buffer(arg, encodingOrOffset, length)
+}
+
+// Copy static methods from Buffer
+copyProps(Buffer, SafeBuffer)
+
+SafeBuffer.from = function (arg, encodingOrOffset, length) {
+  if (typeof arg === 'number') {
+    throw new TypeError('Argument must not be a number')
+  }
+  return Buffer(arg, encodingOrOffset, length)
+}
+
+SafeBuffer.alloc = function (size, fill, encoding) {
+  if (typeof size !== 'number') {
+    throw new TypeError('Argument must be a number')
+  }
+  var buf = Buffer(size)
+  if (fill !== undefined) {
+    if (typeof encoding === 'string') {
+      buf.fill(fill, encoding)
+    } else {
+      buf.fill(fill)
+    }
+  } else {
+    buf.fill(0)
+  }
+  return buf
+}
+
+SafeBuffer.allocUnsafe = function (size) {
+  if (typeof size !== 'number') {
+    throw new TypeError('Argument must be a number')
+  }
+  return Buffer(size)
+}
+
+SafeBuffer.allocUnsafeSlow = function (size) {
+  if (typeof size !== 'number') {
+    throw new TypeError('Argument must be a number')
+  }
+  return buffer.SlowBuffer(size)
+}
+
+
+/***/ }),
+
+/***/ 2201:
+/***/ ((module) => {
+
+
+module.exports = typeof setImmediate === 'function' ? setImmediate :
+	function setImmediate() {
+		var args = [].slice.apply(arguments);
+		args.splice(1, 0, 0);
+		setTimeout.apply(null, args);
+	};
+
+
+/***/ }),
+
+/***/ 7734:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+// Copyright Joyent, Inc. and other Node contributors.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the
+// "Software"), to deal in the Software without restriction, including
+// without limitation the rights to use, copy, modify, merge, publish,
+// distribute, sublicense, and/or sell copies of the Software, and to permit
+// persons to whom the Software is furnished to do so, subject to the
+// following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+// USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+
+
+/*<replacement>*/
+
+var Buffer = (__nccwpck_require__(582).Buffer);
+/*</replacement>*/
+
+var isEncoding = Buffer.isEncoding || function (encoding) {
+  encoding = '' + encoding;
+  switch (encoding && encoding.toLowerCase()) {
+    case 'hex':case 'utf8':case 'utf-8':case 'ascii':case 'binary':case 'base64':case 'ucs2':case 'ucs-2':case 'utf16le':case 'utf-16le':case 'raw':
+      return true;
+    default:
+      return false;
+  }
+};
+
+function _normalizeEncoding(enc) {
+  if (!enc) return 'utf8';
+  var retried;
+  while (true) {
+    switch (enc) {
+      case 'utf8':
+      case 'utf-8':
+        return 'utf8';
+      case 'ucs2':
+      case 'ucs-2':
+      case 'utf16le':
+      case 'utf-16le':
+        return 'utf16le';
+      case 'latin1':
+      case 'binary':
+        return 'latin1';
+      case 'base64':
+      case 'ascii':
+      case 'hex':
+        return enc;
+      default:
+        if (retried) return; // undefined
+        enc = ('' + enc).toLowerCase();
+        retried = true;
+    }
+  }
+};
+
+// Do not cache `Buffer.isEncoding` when checking encoding names as some
+// modules monkey-patch it to support additional encodings
+function normalizeEncoding(enc) {
+  var nenc = _normalizeEncoding(enc);
+  if (typeof nenc !== 'string' && (Buffer.isEncoding === isEncoding || !isEncoding(enc))) throw new Error('Unknown encoding: ' + enc);
+  return nenc || enc;
+}
+
+// StringDecoder provides an interface for efficiently splitting a series of
+// buffers into a series of JS strings without breaking apart multi-byte
+// characters.
+exports.s = StringDecoder;
+function StringDecoder(encoding) {
+  this.encoding = normalizeEncoding(encoding);
+  var nb;
+  switch (this.encoding) {
+    case 'utf16le':
+      this.text = utf16Text;
+      this.end = utf16End;
+      nb = 4;
+      break;
+    case 'utf8':
+      this.fillLast = utf8FillLast;
+      nb = 4;
+      break;
+    case 'base64':
+      this.text = base64Text;
+      this.end = base64End;
+      nb = 3;
+      break;
+    default:
+      this.write = simpleWrite;
+      this.end = simpleEnd;
+      return;
+  }
+  this.lastNeed = 0;
+  this.lastTotal = 0;
+  this.lastChar = Buffer.allocUnsafe(nb);
+}
+
+StringDecoder.prototype.write = function (buf) {
+  if (buf.length === 0) return '';
+  var r;
+  var i;
+  if (this.lastNeed) {
+    r = this.fillLast(buf);
+    if (r === undefined) return '';
+    i = this.lastNeed;
+    this.lastNeed = 0;
+  } else {
+    i = 0;
+  }
+  if (i < buf.length) return r ? r + this.text(buf, i) : this.text(buf, i);
+  return r || '';
+};
+
+StringDecoder.prototype.end = utf8End;
+
+// Returns only complete characters in a Buffer
+StringDecoder.prototype.text = utf8Text;
+
+// Attempts to complete a partial non-UTF-8 character using bytes from a Buffer
+StringDecoder.prototype.fillLast = function (buf) {
+  if (this.lastNeed <= buf.length) {
+    buf.copy(this.lastChar, this.lastTotal - this.lastNeed, 0, this.lastNeed);
+    return this.lastChar.toString(this.encoding, 0, this.lastTotal);
+  }
+  buf.copy(this.lastChar, this.lastTotal - this.lastNeed, 0, buf.length);
+  this.lastNeed -= buf.length;
+};
+
+// Checks the type of a UTF-8 byte, whether it's ASCII, a leading byte, or a
+// continuation byte. If an invalid byte is detected, -2 is returned.
+function utf8CheckByte(byte) {
+  if (byte <= 0x7F) return 0;else if (byte >> 5 === 0x06) return 2;else if (byte >> 4 === 0x0E) return 3;else if (byte >> 3 === 0x1E) return 4;
+  return byte >> 6 === 0x02 ? -1 : -2;
+}
+
+// Checks at most 3 bytes at the end of a Buffer in order to detect an
+// incomplete multi-byte UTF-8 character. The total number of bytes (2, 3, or 4)
+// needed to complete the UTF-8 character (if applicable) are returned.
+function utf8CheckIncomplete(self, buf, i) {
+  var j = buf.length - 1;
+  if (j < i) return 0;
+  var nb = utf8CheckByte(buf[j]);
+  if (nb >= 0) {
+    if (nb > 0) self.lastNeed = nb - 1;
+    return nb;
+  }
+  if (--j < i || nb === -2) return 0;
+  nb = utf8CheckByte(buf[j]);
+  if (nb >= 0) {
+    if (nb > 0) self.lastNeed = nb - 2;
+    return nb;
+  }
+  if (--j < i || nb === -2) return 0;
+  nb = utf8CheckByte(buf[j]);
+  if (nb >= 0) {
+    if (nb > 0) {
+      if (nb === 2) nb = 0;else self.lastNeed = nb - 3;
+    }
+    return nb;
+  }
+  return 0;
+}
+
+// Validates as many continuation bytes for a multi-byte UTF-8 character as
+// needed or are available. If we see a non-continuation byte where we expect
+// one, we "replace" the validated continuation bytes we've seen so far with
+// a single UTF-8 replacement character ('\ufffd'), to match v8's UTF-8 decoding
+// behavior. The continuation byte check is included three times in the case
+// where all of the continuation bytes for a character exist in the same buffer.
+// It is also done this way as a slight performance increase instead of using a
+// loop.
+function utf8CheckExtraBytes(self, buf, p) {
+  if ((buf[0] & 0xC0) !== 0x80) {
+    self.lastNeed = 0;
+    return '\ufffd';
+  }
+  if (self.lastNeed > 1 && buf.length > 1) {
+    if ((buf[1] & 0xC0) !== 0x80) {
+      self.lastNeed = 1;
+      return '\ufffd';
+    }
+    if (self.lastNeed > 2 && buf.length > 2) {
+      if ((buf[2] & 0xC0) !== 0x80) {
+        self.lastNeed = 2;
+        return '\ufffd';
+      }
+    }
+  }
+}
+
+// Attempts to complete a multi-byte UTF-8 character using bytes from a Buffer.
+function utf8FillLast(buf) {
+  var p = this.lastTotal - this.lastNeed;
+  var r = utf8CheckExtraBytes(this, buf, p);
+  if (r !== undefined) return r;
+  if (this.lastNeed <= buf.length) {
+    buf.copy(this.lastChar, p, 0, this.lastNeed);
+    return this.lastChar.toString(this.encoding, 0, this.lastTotal);
+  }
+  buf.copy(this.lastChar, p, 0, buf.length);
+  this.lastNeed -= buf.length;
+}
+
+// Returns all complete UTF-8 characters in a Buffer. If the Buffer ended on a
+// partial character, the character's bytes are buffered until the required
+// number of bytes are available.
+function utf8Text(buf, i) {
+  var total = utf8CheckIncomplete(this, buf, i);
+  if (!this.lastNeed) return buf.toString('utf8', i);
+  this.lastTotal = total;
+  var end = buf.length - (total - this.lastNeed);
+  buf.copy(this.lastChar, 0, end);
+  return buf.toString('utf8', i, end);
+}
+
+// For UTF-8, a replacement character is added when ending on a partial
+// character.
+function utf8End(buf) {
+  var r = buf && buf.length ? this.write(buf) : '';
+  if (this.lastNeed) return r + '\ufffd';
+  return r;
+}
+
+// UTF-16LE typically needs two bytes per character, but even if we have an even
+// number of bytes available, we need to check if we end on a leading/high
+// surrogate. In that case, we need to wait for the next two bytes in order to
+// decode the last character properly.
+function utf16Text(buf, i) {
+  if ((buf.length - i) % 2 === 0) {
+    var r = buf.toString('utf16le', i);
+    if (r) {
+      var c = r.charCodeAt(r.length - 1);
+      if (c >= 0xD800 && c <= 0xDBFF) {
+        this.lastNeed = 2;
+        this.lastTotal = 4;
+        this.lastChar[0] = buf[buf.length - 2];
+        this.lastChar[1] = buf[buf.length - 1];
+        return r.slice(0, -1);
+      }
+    }
+    return r;
+  }
+  this.lastNeed = 1;
+  this.lastTotal = 2;
+  this.lastChar[0] = buf[buf.length - 1];
+  return buf.toString('utf16le', i, buf.length - 1);
+}
+
+// For UTF-16LE we do not explicitly append special replacement characters if we
+// end on a partial character, we simply let v8 handle that.
+function utf16End(buf) {
+  var r = buf && buf.length ? this.write(buf) : '';
+  if (this.lastNeed) {
+    var end = this.lastTotal - this.lastNeed;
+    return r + this.lastChar.toString('utf16le', 0, end);
+  }
+  return r;
+}
+
+function base64Text(buf, i) {
+  var n = (buf.length - i) % 3;
+  if (n === 0) return buf.toString('base64', i);
+  this.lastNeed = 3 - n;
+  this.lastTotal = 3;
+  if (n === 1) {
+    this.lastChar[0] = buf[buf.length - 1];
+  } else {
+    this.lastChar[0] = buf[buf.length - 2];
+    this.lastChar[1] = buf[buf.length - 1];
+  }
+  return buf.toString('base64', i, buf.length - n);
+}
+
+function base64End(buf) {
+  var r = buf && buf.length ? this.write(buf) : '';
+  if (this.lastNeed) return r + this.lastChar.toString('base64', 0, 3 - this.lastNeed);
+  return r;
+}
+
+// Pass bytes on through for single-byte encodings (e.g. ascii, latin1, hex)
+function simpleWrite(buf) {
+  return buf.toString(this.encoding);
+}
+
+function simpleEnd(buf) {
+  return buf && buf.length ? this.write(buf) : '';
+}
 
 /***/ }),
 
@@ -24672,6 +20719,19 @@ function getUserAgent() {
 
 exports.getUserAgent = getUserAgent;
 //# sourceMappingURL=index.js.map
+
+
+/***/ }),
+
+/***/ 5362:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+
+/**
+ * For Node.js, simply re-export the core `util.deprecate` function.
+ */
+
+module.exports = __nccwpck_require__(3837).deprecate;
 
 
 /***/ }),
@@ -26671,794 +22731,10542 @@ function wrappy (fn, cb) {
 
 /***/ }),
 
-/***/ 3679:
+/***/ 9085:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
-var fs = __nccwpck_require__(9303);
+var fs = __nccwpck_require__(7147);
 var path = __nccwpck_require__(1017);
-var async = __nccwpck_require__(6501);
-var ZippedFS = __nccwpck_require__(7188);
+var asyncLib = __nccwpck_require__(8301);
+var Zip = __nccwpck_require__(299);
 
-/*****************************************************************************************
-******************************** PRIVATE HELPER FUNCTIONS ********************************
-*****************************************************************************************/
+// Limiting the number of files read at the same time
+var maxOpenFiles = 500;
 
-/*
- * extracts an unzipped file to the disk asynchrnously
- * @param _path {String}: extraction path
- * @param jszip {JSZip}: the jszip object containg the unzipped file
- * @param callback {Function}: the function to be called when extracting is done
- */
-function extract_to(_path, jszip, callback) {
+module.exports = function zipWrite (rootDir, options, callback) {
+  var promise, succeed, fail;
 
-    var extraction_path = _path === null ? "./" : path.normalize(_path);
-    var absolute_extraction_path = path.resolve(extraction_path);
-    if(extraction_path[extraction_path.length - 1] !== path.sep) {
-        extraction_path += path.sep;
+  if (!callback && typeof options === 'function') {
+    callback = options;
+    options = {};
+  }
+  options = options || {};
+
+  if (!callback) {
+    promise = new Promise(function (resolve, reject) {
+      succeed = resolve;
+      fail = reject;
+    });
+  }
+
+  zipBuffer(rootDir, options, function (err, buffer) {
+    if (!err && options.saveTo) {
+      fs.writeFile(options.saveTo, buffer, { encoding: 'binary' }, function (err) {
+        finish(err);
+      });
+    } else {
+      finish(err);
     }
 
-    // make sure that the extraction path points to a existing directory
-    fs.stat(extraction_path, function (err, stats) {
-
+    function finish (err) {
+      if (callback) {
+        callback(err, buffer);
+      } else {
         if (err) {
+          fail(err);
+        } else {
+          succeed(buffer);
+        }
+      }
+    }
+  });
+
+  return promise;
+};
+
+function zipBuffer (rootDir, options, callback) {
+  var zip = new Zip();
+  var folders = {};
+  // Resolve the path so we can remove trailing slash if provided
+  rootDir = path.resolve(rootDir);
+
+  folders[rootDir] = zip;
+
+  dive(rootDir, function (err) {
+    if (err) return callback(err);
+
+    zip.generateAsync({
+      compression: 'DEFLATE',
+      type: 'nodebuffer'
+    }).then(function (buffer) {
+      callback(null, buffer);
+    }).catch(function (error) {
+      callback(error);
+    });
+  });
+
+  function dive (dir, callback) {
+    fs.readdir(dir, function (err, files) {
+      if (err) return callback(err);
+      if (!files.length) return callback();
+      var count = files.length;
+      files.forEach(function (file) {
+        var fullPath = path.resolve(dir, file);
+        addItem(fullPath, function (err) {
+          if (!--count) {
             callback(err);
-            return;
-        }
-
-        if (!stats.isDirectory()) {
-            callback(new Error(extraction_path + " is not a directory"));
-            return;
-        }
-
-        // sort out the unzipped file to directories and files
-        var dirs = [];
-        var files = [];
-        for (var name in jszip.files) {
-
-            var entry = jszip.files[name];
-
-            var extracted_entry_path = path.resolve(
-                path.join(absolute_extraction_path, name)
-            );
-            if (!extracted_entry_path.startsWith(absolute_extraction_path)) {
-                callback(new Error("Entry is outside the extraction path"))
-                return;
-            }
-
-            if (entry.dir)
-                dirs.push(name);
-            else
-                files.push(name);
-        }
-
-        // sort the directories ascendingy by level
-        dirs.sort(function (a, b) {
-            function dir_sep_count(dir) { return (dir.match(/\//g) || []).length; }
-
-            return dir_sep_count(a) - dir_sep_count(b);
+          }
         });
-
-
-        // create the directories
-        async.eachSeries(dirs, function (dir, end_iteration) {
-
-            //check first if the directory exists
-            fs.stat(extraction_path + dir, function(err, stats) {
-                if((err && err.code === "ENOENT") || !stats.isDirectory()) {
-                    // create the directory if it doesn't exist
-                    fs.mkdir(extraction_path + dir, function (err) {
-                        // end of this iteration
-                        if(err) {
-                            end_iteration(err);
-                            return;
-                        }
-                        end_iteration();
-                    });
-                }
-                else if(err && err.code !== "ENOENT") {
-                    end_iteration(err);
-                    return;
-                }
-                else {
-                    end_iteration();
-                }
-            });
-
-        }, function (err) {
-
-            if (err) {
-                callback(err);
-                return;
-            }
-
-            // write the files
-            async.each(files, function (file, end_iteration) {
-
-                var data = jszip.file(file).asNodeBuffer();
-
-                fs.writeFile(extraction_path + file, data, function (err) {
-
-                    if (err) {
-                        end_iteration(err);
-                        return;
-                    }
-
-                    // end of this iteration
-                    end_iteration();
-
-                });
-            }, function (err) {
-
-                if(err) {
-                    callback(err);
-                    return;
-                }
-
-                // invoke the callback
-                callback(null);
-            });
-        });
+      });
     });
+  }
+
+  var fileQueue = asyncLib.queue(function (task, callback) {
+    fs.readFile(task.fullPath, function (err, data) {
+      if (options.each) {
+        options.each(path.join(task.dir, task.file));
+      }
+      folders[task.dir].file(task.file, data);
+      callback(err);
+    });
+  }, maxOpenFiles);
+
+  function addItem (fullPath, cb) {
+    fs.stat(fullPath, function (err, stat) {
+      if (err) return cb(err);
+      if (options.filter && !options.filter(fullPath, stat)) return cb();
+      var dir = path.dirname(fullPath);
+      var file = path.basename(fullPath);
+      var parentZip;
+      if (stat.isDirectory()) {
+        parentZip = folders[dir];
+        if (options.each) {
+          options.each(fullPath);
+        }
+        folders[fullPath] = parentZip.folder(file);
+        dive(fullPath, cb);
+      } else {
+        fileQueue.push({ fullPath: fullPath, dir: dir, file: file }, cb);
+      }
+    });
+  }
 }
 
-/*
- * extracts an unzipped file to the disk synchrnously
- * @param _path {String}: extraction path
- * @param jszip {JSZip}: the jszip object containg the unzipped file
- */
-function extract_to_sync(_path, jszip) {
 
-    var extraction_path = _path === null ? "./" : path.normalize(_path);
-    var absolute_extraction_path = path.resolve(extraction_path);
-    if(extraction_path[extraction_path.length - 1] !== path.sep) {
-        extraction_path += path.sep;
+/***/ }),
+
+/***/ 8301:
+/***/ (function(__unused_webpack_module, exports) {
+
+(function (global, factory) {
+     true ? factory(exports) :
+    0;
+}(this, (function (exports) { 'use strict';
+
+    /**
+     * Creates a continuation function with some arguments already applied.
+     *
+     * Useful as a shorthand when combined with other control flow functions. Any
+     * arguments passed to the returned function are added to the arguments
+     * originally passed to apply.
+     *
+     * @name apply
+     * @static
+     * @memberOf module:Utils
+     * @method
+     * @category Util
+     * @param {Function} fn - The function you want to eventually apply all
+     * arguments to. Invokes with (arguments...).
+     * @param {...*} arguments... - Any number of arguments to automatically apply
+     * when the continuation is called.
+     * @returns {Function} the partially-applied function
+     * @example
+     *
+     * // using apply
+     * async.parallel([
+     *     async.apply(fs.writeFile, 'testfile1', 'test1'),
+     *     async.apply(fs.writeFile, 'testfile2', 'test2')
+     * ]);
+     *
+     *
+     * // the same process without using apply
+     * async.parallel([
+     *     function(callback) {
+     *         fs.writeFile('testfile1', 'test1', callback);
+     *     },
+     *     function(callback) {
+     *         fs.writeFile('testfile2', 'test2', callback);
+     *     }
+     * ]);
+     *
+     * // It's possible to pass any number of additional arguments when calling the
+     * // continuation:
+     *
+     * node> var fn = async.apply(sys.puts, 'one');
+     * node> fn('two', 'three');
+     * one
+     * two
+     * three
+     */
+    function apply(fn, ...args) {
+        return (...callArgs) => fn(...args,...callArgs);
     }
 
-    // make sure that the extraction path points to a existing directory
-    var stats;
-    try { stats = fs.statSync(extraction_path); }
-    catch (err) { throw new Error(extraction_path + " doesn't exist"); }
-    if (!stats.isDirectory())
-        throw new Error(extraction_path + " is not a directory");
-
-    // sort out the unzipped file to directories and files
-    var dirs = [];
-    var files = [];
-    for (var name in jszip.files) {
-
-        var entry = jszip.files[name];
-
-        var extracted_entry_path = path.resolve(
-            path.join(absolute_extraction_path, name)
-        );
-        if (!extracted_entry_path.startsWith(absolute_extraction_path))
-            throw new Error("Entry is outside the extraction path")
-
-        if (entry.dir)
-            dirs.push(name);
-        else
-            files.push(name);
+    function initialParams (fn) {
+        return function (...args/*, callback*/) {
+            var callback = args.pop();
+            return fn.call(this, args, callback);
+        };
     }
 
-    // sort the directories ascendingy by level
-    dirs.sort(function (a, b) {
-        function dir_sep_count(dir) { return (dir.match(/\//g) || []).length; }
+    /* istanbul ignore file */
 
-        return dir_sep_count(a) - dir_sep_count(b);
-    });
+    var hasQueueMicrotask = typeof queueMicrotask === 'function' && queueMicrotask;
+    var hasSetImmediate = typeof setImmediate === 'function' && setImmediate;
+    var hasNextTick = typeof process === 'object' && typeof process.nextTick === 'function';
 
+    function fallback(fn) {
+        setTimeout(fn, 0);
+    }
 
-    // create the directories
-    dirs.forEach(function (dir) {
+    function wrap(defer) {
+        return (fn, ...args) => defer(() => fn(...args));
+    }
+
+    var _defer;
+
+    if (hasQueueMicrotask) {
+        _defer = queueMicrotask;
+    } else if (hasSetImmediate) {
+        _defer = setImmediate;
+    } else if (hasNextTick) {
+        _defer = process.nextTick;
+    } else {
+        _defer = fallback;
+    }
+
+    var setImmediate$1 = wrap(_defer);
+
+    /**
+     * Take a sync function and make it async, passing its return value to a
+     * callback. This is useful for plugging sync functions into a waterfall,
+     * series, or other async functions. Any arguments passed to the generated
+     * function will be passed to the wrapped function (except for the final
+     * callback argument). Errors thrown will be passed to the callback.
+     *
+     * If the function passed to `asyncify` returns a Promise, that promises's
+     * resolved/rejected state will be used to call the callback, rather than simply
+     * the synchronous return value.
+     *
+     * This also means you can asyncify ES2017 `async` functions.
+     *
+     * @name asyncify
+     * @static
+     * @memberOf module:Utils
+     * @method
+     * @alias wrapSync
+     * @category Util
+     * @param {Function} func - The synchronous function, or Promise-returning
+     * function to convert to an {@link AsyncFunction}.
+     * @returns {AsyncFunction} An asynchronous wrapper of the `func`. To be
+     * invoked with `(args..., callback)`.
+     * @example
+     *
+     * // passing a regular synchronous function
+     * async.waterfall([
+     *     async.apply(fs.readFile, filename, "utf8"),
+     *     async.asyncify(JSON.parse),
+     *     function (data, next) {
+     *         // data is the result of parsing the text.
+     *         // If there was a parsing error, it would have been caught.
+     *     }
+     * ], callback);
+     *
+     * // passing a function returning a promise
+     * async.waterfall([
+     *     async.apply(fs.readFile, filename, "utf8"),
+     *     async.asyncify(function (contents) {
+     *         return db.model.create(contents);
+     *     }),
+     *     function (model, next) {
+     *         // `model` is the instantiated model object.
+     *         // If there was an error, this function would be skipped.
+     *     }
+     * ], callback);
+     *
+     * // es2017 example, though `asyncify` is not needed if your JS environment
+     * // supports async functions out of the box
+     * var q = async.queue(async.asyncify(async function(file) {
+     *     var intermediateStep = await processFile(file);
+     *     return await somePromise(intermediateStep)
+     * }));
+     *
+     * q.push(files);
+     */
+    function asyncify(func) {
+        if (isAsync(func)) {
+            return function (...args/*, callback*/) {
+                const callback = args.pop();
+                const promise = func.apply(this, args);
+                return handlePromise(promise, callback)
+            }
+        }
+
+        return initialParams(function (args, callback) {
+            var result;
+            try {
+                result = func.apply(this, args);
+            } catch (e) {
+                return callback(e);
+            }
+            // if result is Promise object
+            if (result && typeof result.then === 'function') {
+                return handlePromise(result, callback)
+            } else {
+                callback(null, result);
+            }
+        });
+    }
+
+    function handlePromise(promise, callback) {
+        return promise.then(value => {
+            invokeCallback(callback, null, value);
+        }, err => {
+            invokeCallback(callback, err && err.message ? err : new Error(err));
+        });
+    }
+
+    function invokeCallback(callback, error, value) {
         try {
-            var stats = fs.statSync(extraction_path + dir);
-            if(!stats.isDirectory()) {
-                throw new Error("!dir");
-            }
+            callback(error, value);
+        } catch (err) {
+            setImmediate$1(e => { throw e }, err);
         }
-        catch(err) {
-            if(err.code === "ENOENT" || err.message === "!dir") {
-                fs.mkdirSync(extraction_path + dir);
-            }
-            else {
-                throw err;
-            }
-        }
-    });
-
-    // write the files
-    files.forEach(function (file) {
-
-        var data = jszip.file(file).asNodeBuffer();
-
-        fs.writeFileSync(extraction_path + file, data);
-    });
-
-}
-
-
-/*****************************************************************************************
-********************************** MODULE PUBLIC APIS ************************************
-***** THE MODULE CONTAINS THE APIS THAT DEAL WITH EXPORTING AFTER ZIPPING IS COMPLETE ****
-*****************************************************************************************/
-
-/*
- * constructs a ZipExport object out of a JSZip object
- * @param jszip {JSZip}: the JSZip object
- * @param unzipped {Boolean}: a flag to indicate if the source jszip was from an unzipped file
- * @param async {Boolean}: a flag to indicate whether the zipping was asynchrnously
- */
-function ZipExport(jszip, unzipped, async) {
-
-    // hold the JSZip for exporting
-    this.content = jszip;
-
-    // determines if the exported will be compressed
-    this.compressed = false;
-
-    // determines if the source is an unzipped file
-    this.src_unzipped = unzipped ? true : false;
-
-    // determines if the exported file will be written asynchronously
-    this.save_async = async ? true : false;
-}
-
-/*
- * returns the associated JSZip object for low level operations
- * @returns {JSZip}: the associated JSZip object
- */
-ZipExport.prototype.lowLevel = function () {
-
-    return this.content;
-}
-
-/*
- * sets the object so that the exported format will be compressed
- */
-ZipExport.prototype.compress = function () {
-
-    if(!this.src_unzipped)
-        this.compressed = true;
-
-    return this;
-}
-
-/*
- * returns the zipped/unzipped file representation in memory
- * @return {Buffer|ZippedFS}: Buffer for a zipped file, a ZippedFS object for unzipped
- */
-ZipExport.prototype.memory = function() {
-
-    if (!this.src_unzipped) {
-
-        // generate the zipped buffer
-        var buff = this.content.generate({
-            type: "nodebuffer",
-            compression: this.compressed ? "DEFLATE" : undefined
-        });
-
-        return new Buffer.from(buff);
     }
-    else {
 
-        // return a ZippedFS object of the unzipped file
-        return new ZippedFS(this.content);
+    function isAsync(fn) {
+        return fn[Symbol.toStringTag] === 'AsyncFunction';
     }
-}
 
-/*
- * writes the zipped/unzipped file to disk
- * @param _path {String}: path to the output file
- * @param _callback {Function}: the function to be called when the save is done (only in async zipping)
- */
-ZipExport.prototype.save = function (_path, _callback) {
+    function isAsyncGenerator(fn) {
+        return fn[Symbol.toStringTag] === 'AsyncGenerator';
+    }
 
-    var callback = _callback || function () { };
+    function isAsyncIterable(obj) {
+        return typeof obj[Symbol.asyncIterator] === 'function';
+    }
 
-    if (!this.src_unzipped) {
-        // generate the zipped buffer
-        var buff = this.content.generate({
-            type: "nodebuffer",
-            compression: this.compressed ? "DEFLATE" : undefined
-        });
+    function wrapAsync(asyncFn) {
+        if (typeof asyncFn !== 'function') throw new Error('expected a function')
+        return isAsync(asyncFn) ? asyncify(asyncFn) : asyncFn;
+    }
 
-        var normalized_path = path.normalize(_path);
+    // conditionally promisify a function.
+    // only return a promise if a callback is omitted
+    function awaitify (asyncFn, arity = asyncFn.length) {
+        if (!arity) throw new Error('arity is undefined')
+        function awaitable (...args) {
+            if (typeof args[arity - 1] === 'function') {
+                return asyncFn.apply(this, args)
+            }
 
-        // write the new file
-        if (!this.save_async) {
-
-            fs.writeFileSync(normalized_path, buff);
-
+            return new Promise((resolve, reject) => {
+                args[arity - 1] = (err, ...cbArgs) => {
+                    if (err) return reject(err)
+                    resolve(cbArgs.length > 1 ? cbArgs : cbArgs[0]);
+                };
+                asyncFn.apply(this, args);
+            })
         }
-        else
-            fs.writeFile(normalized_path, buff, function (err) {
 
-                if (err) {
-                    callback(err);
+        return awaitable
+    }
+
+    function applyEach (eachfn) {
+        return function applyEach(fns, ...callArgs) {
+            const go = awaitify(function (callback) {
+                var that = this;
+                return eachfn(fns, (fn, cb) => {
+                    wrapAsync(fn).apply(that, callArgs.concat(cb));
+                }, callback);
+            });
+            return go;
+        };
+    }
+
+    function _asyncMap(eachfn, arr, iteratee, callback) {
+        arr = arr || [];
+        var results = [];
+        var counter = 0;
+        var _iteratee = wrapAsync(iteratee);
+
+        return eachfn(arr, (value, _, iterCb) => {
+            var index = counter++;
+            _iteratee(value, (err, v) => {
+                results[index] = v;
+                iterCb(err);
+            });
+        }, err => {
+            callback(err, results);
+        });
+    }
+
+    function isArrayLike(value) {
+        return value &&
+            typeof value.length === 'number' &&
+            value.length >= 0 &&
+            value.length % 1 === 0;
+    }
+
+    // A temporary value used to identify if the loop should be broken.
+    // See #1064, #1293
+    const breakLoop = {};
+
+    function once(fn) {
+        function wrapper (...args) {
+            if (fn === null) return;
+            var callFn = fn;
+            fn = null;
+            callFn.apply(this, args);
+        }
+        Object.assign(wrapper, fn);
+        return wrapper
+    }
+
+    function getIterator (coll) {
+        return coll[Symbol.iterator] && coll[Symbol.iterator]();
+    }
+
+    function createArrayIterator(coll) {
+        var i = -1;
+        var len = coll.length;
+        return function next() {
+            return ++i < len ? {value: coll[i], key: i} : null;
+        }
+    }
+
+    function createES2015Iterator(iterator) {
+        var i = -1;
+        return function next() {
+            var item = iterator.next();
+            if (item.done)
+                return null;
+            i++;
+            return {value: item.value, key: i};
+        }
+    }
+
+    function createObjectIterator(obj) {
+        var okeys = obj ? Object.keys(obj) : [];
+        var i = -1;
+        var len = okeys.length;
+        return function next() {
+            var key = okeys[++i];
+            if (key === '__proto__') {
+                return next();
+            }
+            return i < len ? {value: obj[key], key} : null;
+        };
+    }
+
+    function createIterator(coll) {
+        if (isArrayLike(coll)) {
+            return createArrayIterator(coll);
+        }
+
+        var iterator = getIterator(coll);
+        return iterator ? createES2015Iterator(iterator) : createObjectIterator(coll);
+    }
+
+    function onlyOnce(fn) {
+        return function (...args) {
+            if (fn === null) throw new Error("Callback was already called.");
+            var callFn = fn;
+            fn = null;
+            callFn.apply(this, args);
+        };
+    }
+
+    // for async generators
+    function asyncEachOfLimit(generator, limit, iteratee, callback) {
+        let done = false;
+        let canceled = false;
+        let awaiting = false;
+        let running = 0;
+        let idx = 0;
+
+        function replenish() {
+            //console.log('replenish')
+            if (running >= limit || awaiting || done) return
+            //console.log('replenish awaiting')
+            awaiting = true;
+            generator.next().then(({value, done: iterDone}) => {
+                //console.log('got value', value)
+                if (canceled || done) return
+                awaiting = false;
+                if (iterDone) {
+                    done = true;
+                    if (running <= 0) {
+                        //console.log('done nextCb')
+                        callback(null);
+                    }
                     return;
                 }
-
-                //invoke the callback
-                callback(null);
-
-            });
-    }
-    else {
-
-        // extract the unzipped file to given directory
-        if (!this.save_async)
-            extract_to_sync(_path ? _path : null, this.content);
-        else
-            extract_to(_path ? _path : null, this.content, callback);
-    }
-}
-
-
-module.exports = ZipExport;
-
-
-/***/ }),
-
-/***/ 7188:
-/***/ ((module) => {
-
-/*****************************************************************************************
-***** THE MODULE CONTAINS THE APIS THAT DEAL WITH READING FILES FROM AN UNZIPPED FILE ****
-*****************************************************************************************/
-
-/*
- * constructs a ZippedFS object out of a unzipped JSZip object
- * @param jszip {JSZip}: the JSZip object
- */
-function ZippedFS(jszip) {
-
-    // holds the content of the unzipped file
-    this.unzipped_file = jszip;
-    
-    // holds a list of the files in the unzipped file
-    this.files_list = [];
-
-    // populate the files list
-    for (var name in this.unzipped_file.files) {
-        
-        var entry = this.unzipped_file.files[name];
-        if (!entry.dir)
-            this.files_list.push(name);
-    }
-}
-
-/*
- * returns the list of the files in the unzipped file
- * @return {Array}: a list of file paths in the unzipped file
- */
-ZippedFS.prototype.contents = function () {
-    return this.files_list;
-}
-
-/*
- * reads a file in the unzipped file by its path
- * @param _path {String}: the path of the file inside the unzipped file
- * @param type {String}: the return type of the file, either buffer or text
- * @return {Buffer|String}: a buffer that contains the file or the file as text
- */
-ZippedFS.prototype.read = function (_path, type) {
-
-    if (this.files_list.indexOf(_path) !== -1) {
-        
-        if (type === 'buffer')
-            return this.unzipped_file.file(_path).asNodeBuffer();
-        else if (type === 'text')
-            return this.unzipped_file.file(_path).asText();
-        else
-            throw new Error("Unrecognized type");
-    }
-    else
-        throw new Error(_path + " doesn't exist within the unzipped file");
-}
-
-
-module.exports = ZippedFS; 
-
- 
-
-/***/ }),
-
-/***/ 5438:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
-
-var fs = __nccwpck_require__(9303);
-var path = __nccwpck_require__(1017);
-var JSZip = __nccwpck_require__(6573);
-var Q = __nccwpck_require__(8236);
-var async = __nccwpck_require__(6501)
-var ZipExport = __nccwpck_require__(3679);
-var ZippedFS = __nccwpck_require__(7188);
-
-/*
- * factory method to create jszip objects where 'createFolders'
- * option is the default behavior everywhere
- */
- JSZip.make = function(data, options) {
-
-     // augments the options object with a 'createFolders' option
-     function augment(_opts) {
-         var opts = _opts || {};
-         opts.createFolders = opts.createFolders || true;
-         return opts;
-     }
-
-     var instance = new JSZip(data, augment(options));
-
-     var originals = {};
-     originals.load = instance.load;
-     originals.file = instance.file;
-
-     instance.load = function(data, options) {
-         return originals.load.call(instance, data, augment(options));
-     };
-
-     instance.file = function(name, data, options) {
-         if(!data) {
-             return originals.file.call(instance, name);
-         }
-
-         return originals.file.call(instance, name, data, augment(options));
-     };
-
-     return instance;
- };
-
-/*****************************************************************************************
-******************************** PRIVATE HELPER FUNCTIONS ********************************
-*****************************************************************************************/
-
-/*
- * recursively and asynchronously vistis the directory and all subdirectories and zips all files it finds
- * @param dir {String}: the path to the subdirectory
- * @param zipped_dir {JSZip}: the JSZip object with the new directory as root
- */
-function zip_dir(dir, zipped_dir) {
-
-    var deferred = Q.defer();
-
-    fs.readdir(dir, function (err, entries) {
-
-        if (err) {
-            deferred.reject(err);
-            return;
+                running++;
+                iteratee(value, idx, iterateeCallback);
+                idx++;
+                replenish();
+            }).catch(handleError);
         }
 
-        var entries_paths = entries.map(function (entry) {
-            return path.normalize(dir + path.sep + entry);
-        });
+        function iterateeCallback(err, result) {
+            //console.log('iterateeCallback')
+            running -= 1;
+            if (canceled) return
+            if (err) return handleError(err)
 
-        async.map(entries_paths, fs.stat, function (err, stats) {
-
-            if(err) {
-                deferred.reject(err);
-                return;
+            if (err === false) {
+                done = true;
+                canceled = true;
+                return
             }
 
-            var entries_count = entries_paths.length;
+            if (result === breakLoop || (done && running <= 0)) {
+                done = true;
+                //console.log('done iterCb')
+                return callback(null);
+            }
+            replenish();
+        }
 
-            // construct a an array of objects each contain an with-parent entry and its type
-            var typed_entries = Array(entries_count);
-            for (var i = 0; i < entries_count; i++) {
+        function handleError(err) {
+            if (canceled) return
+            awaiting = false;
+            done = true;
+            callback(err);
+        }
 
-                typed_entries[i] = {
-                    path: entries_paths[i],
-                    type: stats[i].isDirectory() ? 'dir' : 'file'
+        replenish();
+    }
+
+    var eachOfLimit = (limit) => {
+        return (obj, iteratee, callback) => {
+            callback = once(callback);
+            if (limit <= 0) {
+                throw new RangeError('concurrency limit cannot be less than 1')
+            }
+            if (!obj) {
+                return callback(null);
+            }
+            if (isAsyncGenerator(obj)) {
+                return asyncEachOfLimit(obj, limit, iteratee, callback)
+            }
+            if (isAsyncIterable(obj)) {
+                return asyncEachOfLimit(obj[Symbol.asyncIterator](), limit, iteratee, callback)
+            }
+            var nextElem = createIterator(obj);
+            var done = false;
+            var canceled = false;
+            var running = 0;
+            var looping = false;
+
+            function iterateeCallback(err, value) {
+                if (canceled) return
+                running -= 1;
+                if (err) {
+                    done = true;
+                    callback(err);
+                }
+                else if (err === false) {
+                    done = true;
+                    canceled = true;
+                }
+                else if (value === breakLoop || (done && running <= 0)) {
+                    done = true;
+                    return callback(null);
+                }
+                else if (!looping) {
+                    replenish();
                 }
             }
 
-            async.each(typed_entries, function (entry, callback) {
-
-                var parsed_entry_path = path.parse(entry.path);
-
-                if (entry.type === 'dir') {
-
-                    var new_zipped_dir = zipped_dir.folder(parsed_entry_path.base);
-
-                    // recursively zip the newly found dir
-                    Q.fcall(zip_dir, entry.path, new_zipped_dir).then(function () {
-                        //the end of this iteration
-                        callback();
-                    })
-                    .catch(function(error) {
-                        callback(error);
-                    }).done();
-                }
-                else {
-
-                    fs.readFile(entry.path, function (err, data) {
-
-                        if (err) {
-                            callback(err);
-                            return;
+            function replenish () {
+                looping = true;
+                while (running < limit && !done) {
+                    var elem = nextElem();
+                    if (elem === null) {
+                        done = true;
+                        if (running <= 0) {
+                            callback(null);
                         }
-
-                        //zip the file within the current subdir
-                        zipped_dir.file(parsed_entry_path.base, data);
-
-                        // the end of this iteration
-                        callback();
-                    });
-                }
-
-            }, function (err) {
-
-                // here all iterations are over
-                if (err)
-                    deferred.reject(err);
-                else
-                    // resolve the deferred and fullfil the promise
-                    deferred.resolve();
-            });
-        });
-    });
-
-    return deferred.promise;
-}
-
-/*
- * recursively and synchronously visits the directory and all subdirectories and zips all files it finds
- * @param dir {String}: the path to the subdirectory
- * @param zipped_dir {JSZip}: the JSZip object with the new directory as root
- */
-function zip_dir_sync(dir, zipped_dir) {
-
-    var entries = fs.readdirSync(dir);
-    var entries_count = entries.length;
-
-    for(var i = 0; i < entries_count; i++) {
-        var entry = entries[i];
-        var entry_normalized_path = path.normalize(dir + path.sep + entry);
-        var entry_stats = fs.statSync(entry_normalized_path);
-
-        if(entry_stats.isDirectory()) {
-
-            var new_zipped_dir = zipped_dir.folder(entry);
-
-            // recursively zip the newly found dir
-            zip_dir_sync(entry_normalized_path, new_zipped_dir);
-        }
-        else {
-
-            var file = fs.readFileSync(entry_normalized_path);
-
-            // zip the file within current subdir
-            zipped_dir.file(entry, file);
-        }
-    }
-}
-
-
-/*****************************************************************************************
-********************************** MODULE PUBLIC APIS ************************************
-*****************************************************************************************/
-
-
-var ZipLocal = {};  //the module container
-
-ZipLocal.sync = {} // container for the synchronous version of the the api
-
-/*
- * zips a given file/directory asynchronously
- * @param entity {String || Buffer || ZippedFS}: the path to file/directory to zip, the buffer containing the file or a ZippedFS object of an unzipped file
- * @param _callback {Function}: the function to be called when the zipping is done
- * @param _shiftedCallback {Function}: the callback shifted to last argument if entity is a Buffer (optional)
- */
-ZipLocal.zip = function (entity, _callback, _shiftedCallback) {
-
-    var zipped_obj = JSZip.make();
-
-    if (typeof entity === "string") {
-
-        // the entity is a path pointing to a file or a directory
-
-        // the callback is not shifted
-        var callback = _callback || function () { };
-
-        var normalized_path = path.normalize(entity);
-
-        fs.stat(normalized_path, function (err, stats) {
-
-            if (err) {
-                callback(err);
-                return;
-            }
-
-            if (stats.isDirectory()) {
-
-                // start zipping the directory
-                Q.fcall(zip_dir, normalized_path, zipped_obj).then(function () {
-
-                    // invoke the callback
-                    callback(null, new ZipExport(zipped_obj, false, true));
-                })
-                .catch(function(error) {
-                    callback(error);
-                }).done();
-            }
-            else {
-
-                var parsed_path = path.parse(normalized_path);
-                fs.readFile(normalized_path, function (err, file) {
-
-                    if (err) {
-                        callback(err);
                         return;
                     }
+                    running += 1;
+                    iteratee(elem.value, elem.key, onlyOnce(iterateeCallback));
+                }
+                looping = false;
+            }
 
-                    zipped_obj.file(parsed_path.base, file);
+            replenish();
+        };
+    };
 
-                    // invoke the callback
-                    callback(null, new ZipExport(zipped_obj, false, true));
+    /**
+     * The same as [`eachOf`]{@link module:Collections.eachOf} but runs a maximum of `limit` async operations at a
+     * time.
+     *
+     * @name eachOfLimit
+     * @static
+     * @memberOf module:Collections
+     * @method
+     * @see [async.eachOf]{@link module:Collections.eachOf}
+     * @alias forEachOfLimit
+     * @category Collection
+     * @param {Array|Iterable|AsyncIterable|Object} coll - A collection to iterate over.
+     * @param {number} limit - The maximum number of async operations at a time.
+     * @param {AsyncFunction} iteratee - An async function to apply to each
+     * item in `coll`. The `key` is the item's key, or index in the case of an
+     * array.
+     * Invoked with (item, key, callback).
+     * @param {Function} [callback] - A callback which is called when all
+     * `iteratee` functions have finished, or an error occurs. Invoked with (err).
+     * @returns {Promise} a promise, if a callback is omitted
+     */
+    function eachOfLimit$1(coll, limit, iteratee, callback) {
+        return eachOfLimit(limit)(coll, wrapAsync(iteratee), callback);
+    }
 
+    var eachOfLimit$2 = awaitify(eachOfLimit$1, 4);
+
+    // eachOf implementation optimized for array-likes
+    function eachOfArrayLike(coll, iteratee, callback) {
+        callback = once(callback);
+        var index = 0,
+            completed = 0,
+            {length} = coll,
+            canceled = false;
+        if (length === 0) {
+            callback(null);
+        }
+
+        function iteratorCallback(err, value) {
+            if (err === false) {
+                canceled = true;
+            }
+            if (canceled === true) return
+            if (err) {
+                callback(err);
+            } else if ((++completed === length) || value === breakLoop) {
+                callback(null);
+            }
+        }
+
+        for (; index < length; index++) {
+            iteratee(coll[index], index, onlyOnce(iteratorCallback));
+        }
+    }
+
+    // a generic version of eachOf which can handle array, object, and iterator cases.
+    function eachOfGeneric (coll, iteratee, callback) {
+        return eachOfLimit$2(coll, Infinity, iteratee, callback);
+    }
+
+    /**
+     * Like [`each`]{@link module:Collections.each}, except that it passes the key (or index) as the second argument
+     * to the iteratee.
+     *
+     * @name eachOf
+     * @static
+     * @memberOf module:Collections
+     * @method
+     * @alias forEachOf
+     * @category Collection
+     * @see [async.each]{@link module:Collections.each}
+     * @param {Array|Iterable|AsyncIterable|Object} coll - A collection to iterate over.
+     * @param {AsyncFunction} iteratee - A function to apply to each
+     * item in `coll`.
+     * The `key` is the item's key, or index in the case of an array.
+     * Invoked with (item, key, callback).
+     * @param {Function} [callback] - A callback which is called when all
+     * `iteratee` functions have finished, or an error occurs. Invoked with (err).
+     * @returns {Promise} a promise, if a callback is omitted
+     * @example
+     *
+     * // dev.json is a file containing a valid json object config for dev environment
+     * // dev.json is a file containing a valid json object config for test environment
+     * // prod.json is a file containing a valid json object config for prod environment
+     * // invalid.json is a file with a malformed json object
+     *
+     * let configs = {}; //global variable
+     * let validConfigFileMap = {dev: 'dev.json', test: 'test.json', prod: 'prod.json'};
+     * let invalidConfigFileMap = {dev: 'dev.json', test: 'test.json', invalid: 'invalid.json'};
+     *
+     * // asynchronous function that reads a json file and parses the contents as json object
+     * function parseFile(file, key, callback) {
+     *     fs.readFile(file, "utf8", function(err, data) {
+     *         if (err) return calback(err);
+     *         try {
+     *             configs[key] = JSON.parse(data);
+     *         } catch (e) {
+     *             return callback(e);
+     *         }
+     *         callback();
+     *     });
+     * }
+     *
+     * // Using callbacks
+     * async.forEachOf(validConfigFileMap, parseFile, function (err) {
+     *     if (err) {
+     *         console.error(err);
+     *     } else {
+     *         console.log(configs);
+     *         // configs is now a map of JSON data, e.g.
+     *         // { dev: //parsed dev.json, test: //parsed test.json, prod: //parsed prod.json}
+     *     }
+     * });
+     *
+     * //Error handing
+     * async.forEachOf(invalidConfigFileMap, parseFile, function (err) {
+     *     if (err) {
+     *         console.error(err);
+     *         // JSON parse error exception
+     *     } else {
+     *         console.log(configs);
+     *     }
+     * });
+     *
+     * // Using Promises
+     * async.forEachOf(validConfigFileMap, parseFile)
+     * .then( () => {
+     *     console.log(configs);
+     *     // configs is now a map of JSON data, e.g.
+     *     // { dev: //parsed dev.json, test: //parsed test.json, prod: //parsed prod.json}
+     * }).catch( err => {
+     *     console.error(err);
+     * });
+     *
+     * //Error handing
+     * async.forEachOf(invalidConfigFileMap, parseFile)
+     * .then( () => {
+     *     console.log(configs);
+     * }).catch( err => {
+     *     console.error(err);
+     *     // JSON parse error exception
+     * });
+     *
+     * // Using async/await
+     * async () => {
+     *     try {
+     *         let result = await async.forEachOf(validConfigFileMap, parseFile);
+     *         console.log(configs);
+     *         // configs is now a map of JSON data, e.g.
+     *         // { dev: //parsed dev.json, test: //parsed test.json, prod: //parsed prod.json}
+     *     }
+     *     catch (err) {
+     *         console.log(err);
+     *     }
+     * }
+     *
+     * //Error handing
+     * async () => {
+     *     try {
+     *         let result = await async.forEachOf(invalidConfigFileMap, parseFile);
+     *         console.log(configs);
+     *     }
+     *     catch (err) {
+     *         console.log(err);
+     *         // JSON parse error exception
+     *     }
+     * }
+     *
+     */
+    function eachOf(coll, iteratee, callback) {
+        var eachOfImplementation = isArrayLike(coll) ? eachOfArrayLike : eachOfGeneric;
+        return eachOfImplementation(coll, wrapAsync(iteratee), callback);
+    }
+
+    var eachOf$1 = awaitify(eachOf, 3);
+
+    /**
+     * Produces a new collection of values by mapping each value in `coll` through
+     * the `iteratee` function. The `iteratee` is called with an item from `coll`
+     * and a callback for when it has finished processing. Each of these callbacks
+     * takes 2 arguments: an `error`, and the transformed item from `coll`. If
+     * `iteratee` passes an error to its callback, the main `callback` (for the
+     * `map` function) is immediately called with the error.
+     *
+     * Note, that since this function applies the `iteratee` to each item in
+     * parallel, there is no guarantee that the `iteratee` functions will complete
+     * in order. However, the results array will be in the same order as the
+     * original `coll`.
+     *
+     * If `map` is passed an Object, the results will be an Array.  The results
+     * will roughly be in the order of the original Objects' keys (but this can
+     * vary across JavaScript engines).
+     *
+     * @name map
+     * @static
+     * @memberOf module:Collections
+     * @method
+     * @category Collection
+     * @param {Array|Iterable|AsyncIterable|Object} coll - A collection to iterate over.
+     * @param {AsyncFunction} iteratee - An async function to apply to each item in
+     * `coll`.
+     * The iteratee should complete with the transformed item.
+     * Invoked with (item, callback).
+     * @param {Function} [callback] - A callback which is called when all `iteratee`
+     * functions have finished, or an error occurs. Results is an Array of the
+     * transformed items from the `coll`. Invoked with (err, results).
+     * @returns {Promise} a promise, if no callback is passed
+     * @example
+     *
+     * // file1.txt is a file that is 1000 bytes in size
+     * // file2.txt is a file that is 2000 bytes in size
+     * // file3.txt is a file that is 3000 bytes in size
+     * // file4.txt does not exist
+     *
+     * const fileList = ['file1.txt','file2.txt','file3.txt'];
+     * const withMissingFileList = ['file1.txt','file2.txt','file4.txt'];
+     *
+     * // asynchronous function that returns the file size in bytes
+     * function getFileSizeInBytes(file, callback) {
+     *     fs.stat(file, function(err, stat) {
+     *         if (err) {
+     *             return callback(err);
+     *         }
+     *         callback(null, stat.size);
+     *     });
+     * }
+     *
+     * // Using callbacks
+     * async.map(fileList, getFileSizeInBytes, function(err, results) {
+     *     if (err) {
+     *         console.log(err);
+     *     } else {
+     *         console.log(results);
+     *         // results is now an array of the file size in bytes for each file, e.g.
+     *         // [ 1000, 2000, 3000]
+     *     }
+     * });
+     *
+     * // Error Handling
+     * async.map(withMissingFileList, getFileSizeInBytes, function(err, results) {
+     *     if (err) {
+     *         console.log(err);
+     *         // [ Error: ENOENT: no such file or directory ]
+     *     } else {
+     *         console.log(results);
+     *     }
+     * });
+     *
+     * // Using Promises
+     * async.map(fileList, getFileSizeInBytes)
+     * .then( results => {
+     *     console.log(results);
+     *     // results is now an array of the file size in bytes for each file, e.g.
+     *     // [ 1000, 2000, 3000]
+     * }).catch( err => {
+     *     console.log(err);
+     * });
+     *
+     * // Error Handling
+     * async.map(withMissingFileList, getFileSizeInBytes)
+     * .then( results => {
+     *     console.log(results);
+     * }).catch( err => {
+     *     console.log(err);
+     *     // [ Error: ENOENT: no such file or directory ]
+     * });
+     *
+     * // Using async/await
+     * async () => {
+     *     try {
+     *         let results = await async.map(fileList, getFileSizeInBytes);
+     *         console.log(results);
+     *         // results is now an array of the file size in bytes for each file, e.g.
+     *         // [ 1000, 2000, 3000]
+     *     }
+     *     catch (err) {
+     *         console.log(err);
+     *     }
+     * }
+     *
+     * // Error Handling
+     * async () => {
+     *     try {
+     *         let results = await async.map(withMissingFileList, getFileSizeInBytes);
+     *         console.log(results);
+     *     }
+     *     catch (err) {
+     *         console.log(err);
+     *         // [ Error: ENOENT: no such file or directory ]
+     *     }
+     * }
+     *
+     */
+    function map (coll, iteratee, callback) {
+        return _asyncMap(eachOf$1, coll, iteratee, callback)
+    }
+    var map$1 = awaitify(map, 3);
+
+    /**
+     * Applies the provided arguments to each function in the array, calling
+     * `callback` after all functions have completed. If you only provide the first
+     * argument, `fns`, then it will return a function which lets you pass in the
+     * arguments as if it were a single function call. If more arguments are
+     * provided, `callback` is required while `args` is still optional. The results
+     * for each of the applied async functions are passed to the final callback
+     * as an array.
+     *
+     * @name applyEach
+     * @static
+     * @memberOf module:ControlFlow
+     * @method
+     * @category Control Flow
+     * @param {Array|Iterable|AsyncIterable|Object} fns - A collection of {@link AsyncFunction}s
+     * to all call with the same arguments
+     * @param {...*} [args] - any number of separate arguments to pass to the
+     * function.
+     * @param {Function} [callback] - the final argument should be the callback,
+     * called when all functions have completed processing.
+     * @returns {AsyncFunction} - Returns a function that takes no args other than
+     * an optional callback, that is the result of applying the `args` to each
+     * of the functions.
+     * @example
+     *
+     * const appliedFn = async.applyEach([enableSearch, updateSchema], 'bucket')
+     *
+     * appliedFn((err, results) => {
+     *     // results[0] is the results for `enableSearch`
+     *     // results[1] is the results for `updateSchema`
+     * });
+     *
+     * // partial application example:
+     * async.each(
+     *     buckets,
+     *     async (bucket) => async.applyEach([enableSearch, updateSchema], bucket)(),
+     *     callback
+     * );
+     */
+    var applyEach$1 = applyEach(map$1);
+
+    /**
+     * The same as [`eachOf`]{@link module:Collections.eachOf} but runs only a single async operation at a time.
+     *
+     * @name eachOfSeries
+     * @static
+     * @memberOf module:Collections
+     * @method
+     * @see [async.eachOf]{@link module:Collections.eachOf}
+     * @alias forEachOfSeries
+     * @category Collection
+     * @param {Array|Iterable|AsyncIterable|Object} coll - A collection to iterate over.
+     * @param {AsyncFunction} iteratee - An async function to apply to each item in
+     * `coll`.
+     * Invoked with (item, key, callback).
+     * @param {Function} [callback] - A callback which is called when all `iteratee`
+     * functions have finished, or an error occurs. Invoked with (err).
+     * @returns {Promise} a promise, if a callback is omitted
+     */
+    function eachOfSeries(coll, iteratee, callback) {
+        return eachOfLimit$2(coll, 1, iteratee, callback)
+    }
+    var eachOfSeries$1 = awaitify(eachOfSeries, 3);
+
+    /**
+     * The same as [`map`]{@link module:Collections.map} but runs only a single async operation at a time.
+     *
+     * @name mapSeries
+     * @static
+     * @memberOf module:Collections
+     * @method
+     * @see [async.map]{@link module:Collections.map}
+     * @category Collection
+     * @param {Array|Iterable|AsyncIterable|Object} coll - A collection to iterate over.
+     * @param {AsyncFunction} iteratee - An async function to apply to each item in
+     * `coll`.
+     * The iteratee should complete with the transformed item.
+     * Invoked with (item, callback).
+     * @param {Function} [callback] - A callback which is called when all `iteratee`
+     * functions have finished, or an error occurs. Results is an array of the
+     * transformed items from the `coll`. Invoked with (err, results).
+     * @returns {Promise} a promise, if no callback is passed
+     */
+    function mapSeries (coll, iteratee, callback) {
+        return _asyncMap(eachOfSeries$1, coll, iteratee, callback)
+    }
+    var mapSeries$1 = awaitify(mapSeries, 3);
+
+    /**
+     * The same as [`applyEach`]{@link module:ControlFlow.applyEach} but runs only a single async operation at a time.
+     *
+     * @name applyEachSeries
+     * @static
+     * @memberOf module:ControlFlow
+     * @method
+     * @see [async.applyEach]{@link module:ControlFlow.applyEach}
+     * @category Control Flow
+     * @param {Array|Iterable|AsyncIterable|Object} fns - A collection of {@link AsyncFunction}s to all
+     * call with the same arguments
+     * @param {...*} [args] - any number of separate arguments to pass to the
+     * function.
+     * @param {Function} [callback] - the final argument should be the callback,
+     * called when all functions have completed processing.
+     * @returns {AsyncFunction} - A function, that when called, is the result of
+     * appling the `args` to the list of functions.  It takes no args, other than
+     * a callback.
+     */
+    var applyEachSeries = applyEach(mapSeries$1);
+
+    const PROMISE_SYMBOL = Symbol('promiseCallback');
+
+    function promiseCallback () {
+        let resolve, reject;
+        function callback (err, ...args) {
+            if (err) return reject(err)
+            resolve(args.length > 1 ? args : args[0]);
+        }
+
+        callback[PROMISE_SYMBOL] = new Promise((res, rej) => {
+            resolve = res,
+            reject = rej;
+        });
+
+        return callback
+    }
+
+    /**
+     * Determines the best order for running the {@link AsyncFunction}s in `tasks`, based on
+     * their requirements. Each function can optionally depend on other functions
+     * being completed first, and each function is run as soon as its requirements
+     * are satisfied.
+     *
+     * If any of the {@link AsyncFunction}s pass an error to their callback, the `auto` sequence
+     * will stop. Further tasks will not execute (so any other functions depending
+     * on it will not run), and the main `callback` is immediately called with the
+     * error.
+     *
+     * {@link AsyncFunction}s also receive an object containing the results of functions which
+     * have completed so far as the first argument, if they have dependencies. If a
+     * task function has no dependencies, it will only be passed a callback.
+     *
+     * @name auto
+     * @static
+     * @memberOf module:ControlFlow
+     * @method
+     * @category Control Flow
+     * @param {Object} tasks - An object. Each of its properties is either a
+     * function or an array of requirements, with the {@link AsyncFunction} itself the last item
+     * in the array. The object's key of a property serves as the name of the task
+     * defined by that property, i.e. can be used when specifying requirements for
+     * other tasks. The function receives one or two arguments:
+     * * a `results` object, containing the results of the previously executed
+     *   functions, only passed if the task has any dependencies,
+     * * a `callback(err, result)` function, which must be called when finished,
+     *   passing an `error` (which can be `null`) and the result of the function's
+     *   execution.
+     * @param {number} [concurrency=Infinity] - An optional `integer` for
+     * determining the maximum number of tasks that can be run in parallel. By
+     * default, as many as possible.
+     * @param {Function} [callback] - An optional callback which is called when all
+     * the tasks have been completed. It receives the `err` argument if any `tasks`
+     * pass an error to their callback. Results are always returned; however, if an
+     * error occurs, no further `tasks` will be performed, and the results object
+     * will only contain partial results. Invoked with (err, results).
+     * @returns {Promise} a promise, if a callback is not passed
+     * @example
+     *
+     * //Using Callbacks
+     * async.auto({
+     *     get_data: function(callback) {
+     *         // async code to get some data
+     *         callback(null, 'data', 'converted to array');
+     *     },
+     *     make_folder: function(callback) {
+     *         // async code to create a directory to store a file in
+     *         // this is run at the same time as getting the data
+     *         callback(null, 'folder');
+     *     },
+     *     write_file: ['get_data', 'make_folder', function(results, callback) {
+     *         // once there is some data and the directory exists,
+     *         // write the data to a file in the directory
+     *         callback(null, 'filename');
+     *     }],
+     *     email_link: ['write_file', function(results, callback) {
+     *         // once the file is written let's email a link to it...
+     *         callback(null, {'file':results.write_file, 'email':'user@example.com'});
+     *     }]
+     * }, function(err, results) {
+     *     if (err) {
+     *         console.log('err = ', err);
+     *     }
+     *     console.log('results = ', results);
+     *     // results = {
+     *     //     get_data: ['data', 'converted to array']
+     *     //     make_folder; 'folder',
+     *     //     write_file: 'filename'
+     *     //     email_link: { file: 'filename', email: 'user@example.com' }
+     *     // }
+     * });
+     *
+     * //Using Promises
+     * async.auto({
+     *     get_data: function(callback) {
+     *         console.log('in get_data');
+     *         // async code to get some data
+     *         callback(null, 'data', 'converted to array');
+     *     },
+     *     make_folder: function(callback) {
+     *         console.log('in make_folder');
+     *         // async code to create a directory to store a file in
+     *         // this is run at the same time as getting the data
+     *         callback(null, 'folder');
+     *     },
+     *     write_file: ['get_data', 'make_folder', function(results, callback) {
+     *         // once there is some data and the directory exists,
+     *         // write the data to a file in the directory
+     *         callback(null, 'filename');
+     *     }],
+     *     email_link: ['write_file', function(results, callback) {
+     *         // once the file is written let's email a link to it...
+     *         callback(null, {'file':results.write_file, 'email':'user@example.com'});
+     *     }]
+     * }).then(results => {
+     *     console.log('results = ', results);
+     *     // results = {
+     *     //     get_data: ['data', 'converted to array']
+     *     //     make_folder; 'folder',
+     *     //     write_file: 'filename'
+     *     //     email_link: { file: 'filename', email: 'user@example.com' }
+     *     // }
+     * }).catch(err => {
+     *     console.log('err = ', err);
+     * });
+     *
+     * //Using async/await
+     * async () => {
+     *     try {
+     *         let results = await async.auto({
+     *             get_data: function(callback) {
+     *                 // async code to get some data
+     *                 callback(null, 'data', 'converted to array');
+     *             },
+     *             make_folder: function(callback) {
+     *                 // async code to create a directory to store a file in
+     *                 // this is run at the same time as getting the data
+     *                 callback(null, 'folder');
+     *             },
+     *             write_file: ['get_data', 'make_folder', function(results, callback) {
+     *                 // once there is some data and the directory exists,
+     *                 // write the data to a file in the directory
+     *                 callback(null, 'filename');
+     *             }],
+     *             email_link: ['write_file', function(results, callback) {
+     *                 // once the file is written let's email a link to it...
+     *                 callback(null, {'file':results.write_file, 'email':'user@example.com'});
+     *             }]
+     *         });
+     *         console.log('results = ', results);
+     *         // results = {
+     *         //     get_data: ['data', 'converted to array']
+     *         //     make_folder; 'folder',
+     *         //     write_file: 'filename'
+     *         //     email_link: { file: 'filename', email: 'user@example.com' }
+     *         // }
+     *     }
+     *     catch (err) {
+     *         console.log(err);
+     *     }
+     * }
+     *
+     */
+    function auto(tasks, concurrency, callback) {
+        if (typeof concurrency !== 'number') {
+            // concurrency is optional, shift the args.
+            callback = concurrency;
+            concurrency = null;
+        }
+        callback = once(callback || promiseCallback());
+        var numTasks = Object.keys(tasks).length;
+        if (!numTasks) {
+            return callback(null);
+        }
+        if (!concurrency) {
+            concurrency = numTasks;
+        }
+
+        var results = {};
+        var runningTasks = 0;
+        var canceled = false;
+        var hasError = false;
+
+        var listeners = Object.create(null);
+
+        var readyTasks = [];
+
+        // for cycle detection:
+        var readyToCheck = []; // tasks that have been identified as reachable
+        // without the possibility of returning to an ancestor task
+        var uncheckedDependencies = {};
+
+        Object.keys(tasks).forEach(key => {
+            var task = tasks[key];
+            if (!Array.isArray(task)) {
+                // no dependencies
+                enqueueTask(key, [task]);
+                readyToCheck.push(key);
+                return;
+            }
+
+            var dependencies = task.slice(0, task.length - 1);
+            var remainingDependencies = dependencies.length;
+            if (remainingDependencies === 0) {
+                enqueueTask(key, task);
+                readyToCheck.push(key);
+                return;
+            }
+            uncheckedDependencies[key] = remainingDependencies;
+
+            dependencies.forEach(dependencyName => {
+                if (!tasks[dependencyName]) {
+                    throw new Error('async.auto task `' + key +
+                        '` has a non-existent dependency `' +
+                        dependencyName + '` in ' +
+                        dependencies.join(', '));
+                }
+                addListener(dependencyName, () => {
+                    remainingDependencies--;
+                    if (remainingDependencies === 0) {
+                        enqueueTask(key, task);
+                    }
+                });
+            });
+        });
+
+        checkForDeadlocks();
+        processQueue();
+
+        function enqueueTask(key, task) {
+            readyTasks.push(() => runTask(key, task));
+        }
+
+        function processQueue() {
+            if (canceled) return
+            if (readyTasks.length === 0 && runningTasks === 0) {
+                return callback(null, results);
+            }
+            while(readyTasks.length && runningTasks < concurrency) {
+                var run = readyTasks.shift();
+                run();
+            }
+
+        }
+
+        function addListener(taskName, fn) {
+            var taskListeners = listeners[taskName];
+            if (!taskListeners) {
+                taskListeners = listeners[taskName] = [];
+            }
+
+            taskListeners.push(fn);
+        }
+
+        function taskComplete(taskName) {
+            var taskListeners = listeners[taskName] || [];
+            taskListeners.forEach(fn => fn());
+            processQueue();
+        }
+
+
+        function runTask(key, task) {
+            if (hasError) return;
+
+            var taskCallback = onlyOnce((err, ...result) => {
+                runningTasks--;
+                if (err === false) {
+                    canceled = true;
+                    return
+                }
+                if (result.length < 2) {
+                    [result] = result;
+                }
+                if (err) {
+                    var safeResults = {};
+                    Object.keys(results).forEach(rkey => {
+                        safeResults[rkey] = results[rkey];
+                    });
+                    safeResults[key] = result;
+                    hasError = true;
+                    listeners = Object.create(null);
+                    if (canceled) return
+                    callback(err, safeResults);
+                } else {
+                    results[key] = result;
+                    taskComplete(key);
+                }
+            });
+
+            runningTasks++;
+            var taskFn = wrapAsync(task[task.length - 1]);
+            if (task.length > 1) {
+                taskFn(results, taskCallback);
+            } else {
+                taskFn(taskCallback);
+            }
+        }
+
+        function checkForDeadlocks() {
+            // Kahn's algorithm
+            // https://en.wikipedia.org/wiki/Topological_sorting#Kahn.27s_algorithm
+            // http://connalle.blogspot.com/2013/10/topological-sortingkahn-algorithm.html
+            var currentTask;
+            var counter = 0;
+            while (readyToCheck.length) {
+                currentTask = readyToCheck.pop();
+                counter++;
+                getDependents(currentTask).forEach(dependent => {
+                    if (--uncheckedDependencies[dependent] === 0) {
+                        readyToCheck.push(dependent);
+                    }
+                });
+            }
+
+            if (counter !== numTasks) {
+                throw new Error(
+                    'async.auto cannot execute tasks due to a recursive dependency'
+                );
+            }
+        }
+
+        function getDependents(taskName) {
+            var result = [];
+            Object.keys(tasks).forEach(key => {
+                const task = tasks[key];
+                if (Array.isArray(task) && task.indexOf(taskName) >= 0) {
+                    result.push(key);
+                }
+            });
+            return result;
+        }
+
+        return callback[PROMISE_SYMBOL]
+    }
+
+    var FN_ARGS = /^(?:async\s+)?(?:function)?\s*\w*\s*\(\s*([^)]+)\s*\)(?:\s*{)/;
+    var ARROW_FN_ARGS = /^(?:async\s+)?\(?\s*([^)=]+)\s*\)?(?:\s*=>)/;
+    var FN_ARG_SPLIT = /,/;
+    var FN_ARG = /(=.+)?(\s*)$/;
+
+    function stripComments(string) {
+        let stripped = '';
+        let index = 0;
+        let endBlockComment = string.indexOf('*/');
+        while (index < string.length) {
+            if (string[index] === '/' && string[index+1] === '/') {
+                // inline comment
+                let endIndex = string.indexOf('\n', index);
+                index = (endIndex === -1) ? string.length : endIndex;
+            } else if ((endBlockComment !== -1) && (string[index] === '/') && (string[index+1] === '*')) {
+                // block comment
+                let endIndex = string.indexOf('*/', index);
+                if (endIndex !== -1) {
+                    index = endIndex + 2;
+                    endBlockComment = string.indexOf('*/', index);
+                } else {
+                    stripped += string[index];
+                    index++;
+                }
+            } else {
+                stripped += string[index];
+                index++;
+            }
+        }
+        return stripped;
+    }
+
+    function parseParams(func) {
+        const src = stripComments(func.toString());
+        let match = src.match(FN_ARGS);
+        if (!match) {
+            match = src.match(ARROW_FN_ARGS);
+        }
+        if (!match) throw new Error('could not parse args in autoInject\nSource:\n' + src)
+        let [, args] = match;
+        return args
+            .replace(/\s/g, '')
+            .split(FN_ARG_SPLIT)
+            .map((arg) => arg.replace(FN_ARG, '').trim());
+    }
+
+    /**
+     * A dependency-injected version of the [async.auto]{@link module:ControlFlow.auto} function. Dependent
+     * tasks are specified as parameters to the function, after the usual callback
+     * parameter, with the parameter names matching the names of the tasks it
+     * depends on. This can provide even more readable task graphs which can be
+     * easier to maintain.
+     *
+     * If a final callback is specified, the task results are similarly injected,
+     * specified as named parameters after the initial error parameter.
+     *
+     * The autoInject function is purely syntactic sugar and its semantics are
+     * otherwise equivalent to [async.auto]{@link module:ControlFlow.auto}.
+     *
+     * @name autoInject
+     * @static
+     * @memberOf module:ControlFlow
+     * @method
+     * @see [async.auto]{@link module:ControlFlow.auto}
+     * @category Control Flow
+     * @param {Object} tasks - An object, each of whose properties is an {@link AsyncFunction} of
+     * the form 'func([dependencies...], callback). The object's key of a property
+     * serves as the name of the task defined by that property, i.e. can be used
+     * when specifying requirements for other tasks.
+     * * The `callback` parameter is a `callback(err, result)` which must be called
+     *   when finished, passing an `error` (which can be `null`) and the result of
+     *   the function's execution. The remaining parameters name other tasks on
+     *   which the task is dependent, and the results from those tasks are the
+     *   arguments of those parameters.
+     * @param {Function} [callback] - An optional callback which is called when all
+     * the tasks have been completed. It receives the `err` argument if any `tasks`
+     * pass an error to their callback, and a `results` object with any completed
+     * task results, similar to `auto`.
+     * @returns {Promise} a promise, if no callback is passed
+     * @example
+     *
+     * //  The example from `auto` can be rewritten as follows:
+     * async.autoInject({
+     *     get_data: function(callback) {
+     *         // async code to get some data
+     *         callback(null, 'data', 'converted to array');
+     *     },
+     *     make_folder: function(callback) {
+     *         // async code to create a directory to store a file in
+     *         // this is run at the same time as getting the data
+     *         callback(null, 'folder');
+     *     },
+     *     write_file: function(get_data, make_folder, callback) {
+     *         // once there is some data and the directory exists,
+     *         // write the data to a file in the directory
+     *         callback(null, 'filename');
+     *     },
+     *     email_link: function(write_file, callback) {
+     *         // once the file is written let's email a link to it...
+     *         // write_file contains the filename returned by write_file.
+     *         callback(null, {'file':write_file, 'email':'user@example.com'});
+     *     }
+     * }, function(err, results) {
+     *     console.log('err = ', err);
+     *     console.log('email_link = ', results.email_link);
+     * });
+     *
+     * // If you are using a JS minifier that mangles parameter names, `autoInject`
+     * // will not work with plain functions, since the parameter names will be
+     * // collapsed to a single letter identifier.  To work around this, you can
+     * // explicitly specify the names of the parameters your task function needs
+     * // in an array, similar to Angular.js dependency injection.
+     *
+     * // This still has an advantage over plain `auto`, since the results a task
+     * // depends on are still spread into arguments.
+     * async.autoInject({
+     *     //...
+     *     write_file: ['get_data', 'make_folder', function(get_data, make_folder, callback) {
+     *         callback(null, 'filename');
+     *     }],
+     *     email_link: ['write_file', function(write_file, callback) {
+     *         callback(null, {'file':write_file, 'email':'user@example.com'});
+     *     }]
+     *     //...
+     * }, function(err, results) {
+     *     console.log('err = ', err);
+     *     console.log('email_link = ', results.email_link);
+     * });
+     */
+    function autoInject(tasks, callback) {
+        var newTasks = {};
+
+        Object.keys(tasks).forEach(key => {
+            var taskFn = tasks[key];
+            var params;
+            var fnIsAsync = isAsync(taskFn);
+            var hasNoDeps =
+                (!fnIsAsync && taskFn.length === 1) ||
+                (fnIsAsync && taskFn.length === 0);
+
+            if (Array.isArray(taskFn)) {
+                params = [...taskFn];
+                taskFn = params.pop();
+
+                newTasks[key] = params.concat(params.length > 0 ? newTask : taskFn);
+            } else if (hasNoDeps) {
+                // no dependencies, use the function as-is
+                newTasks[key] = taskFn;
+            } else {
+                params = parseParams(taskFn);
+                if ((taskFn.length === 0 && !fnIsAsync) && params.length === 0) {
+                    throw new Error("autoInject task functions require explicit parameters.");
+                }
+
+                // remove callback param
+                if (!fnIsAsync) params.pop();
+
+                newTasks[key] = params.concat(newTask);
+            }
+
+            function newTask(results, taskCb) {
+                var newArgs = params.map(name => results[name]);
+                newArgs.push(taskCb);
+                wrapAsync(taskFn)(...newArgs);
+            }
+        });
+
+        return auto(newTasks, callback);
+    }
+
+    // Simple doubly linked list (https://en.wikipedia.org/wiki/Doubly_linked_list) implementation
+    // used for queues. This implementation assumes that the node provided by the user can be modified
+    // to adjust the next and last properties. We implement only the minimal functionality
+    // for queue support.
+    class DLL {
+        constructor() {
+            this.head = this.tail = null;
+            this.length = 0;
+        }
+
+        removeLink(node) {
+            if (node.prev) node.prev.next = node.next;
+            else this.head = node.next;
+            if (node.next) node.next.prev = node.prev;
+            else this.tail = node.prev;
+
+            node.prev = node.next = null;
+            this.length -= 1;
+            return node;
+        }
+
+        empty () {
+            while(this.head) this.shift();
+            return this;
+        }
+
+        insertAfter(node, newNode) {
+            newNode.prev = node;
+            newNode.next = node.next;
+            if (node.next) node.next.prev = newNode;
+            else this.tail = newNode;
+            node.next = newNode;
+            this.length += 1;
+        }
+
+        insertBefore(node, newNode) {
+            newNode.prev = node.prev;
+            newNode.next = node;
+            if (node.prev) node.prev.next = newNode;
+            else this.head = newNode;
+            node.prev = newNode;
+            this.length += 1;
+        }
+
+        unshift(node) {
+            if (this.head) this.insertBefore(this.head, node);
+            else setInitial(this, node);
+        }
+
+        push(node) {
+            if (this.tail) this.insertAfter(this.tail, node);
+            else setInitial(this, node);
+        }
+
+        shift() {
+            return this.head && this.removeLink(this.head);
+        }
+
+        pop() {
+            return this.tail && this.removeLink(this.tail);
+        }
+
+        toArray() {
+            return [...this]
+        }
+
+        *[Symbol.iterator] () {
+            var cur = this.head;
+            while (cur) {
+                yield cur.data;
+                cur = cur.next;
+            }
+        }
+
+        remove (testFn) {
+            var curr = this.head;
+            while(curr) {
+                var {next} = curr;
+                if (testFn(curr)) {
+                    this.removeLink(curr);
+                }
+                curr = next;
+            }
+            return this;
+        }
+    }
+
+    function setInitial(dll, node) {
+        dll.length = 1;
+        dll.head = dll.tail = node;
+    }
+
+    function queue(worker, concurrency, payload) {
+        if (concurrency == null) {
+            concurrency = 1;
+        }
+        else if(concurrency === 0) {
+            throw new RangeError('Concurrency must not be zero');
+        }
+
+        var _worker = wrapAsync(worker);
+        var numRunning = 0;
+        var workersList = [];
+        const events = {
+            error: [],
+            drain: [],
+            saturated: [],
+            unsaturated: [],
+            empty: []
+        };
+
+        function on (event, handler) {
+            events[event].push(handler);
+        }
+
+        function once (event, handler) {
+            const handleAndRemove = (...args) => {
+                off(event, handleAndRemove);
+                handler(...args);
+            };
+            events[event].push(handleAndRemove);
+        }
+
+        function off (event, handler) {
+            if (!event) return Object.keys(events).forEach(ev => events[ev] = [])
+            if (!handler) return events[event] = []
+            events[event] = events[event].filter(ev => ev !== handler);
+        }
+
+        function trigger (event, ...args) {
+            events[event].forEach(handler => handler(...args));
+        }
+
+        var processingScheduled = false;
+        function _insert(data, insertAtFront, rejectOnError, callback) {
+            if (callback != null && typeof callback !== 'function') {
+                throw new Error('task callback must be a function');
+            }
+            q.started = true;
+
+            var res, rej;
+            function promiseCallback (err, ...args) {
+                // we don't care about the error, let the global error handler
+                // deal with it
+                if (err) return rejectOnError ? rej(err) : res()
+                if (args.length <= 1) return res(args[0])
+                res(args);
+            }
+
+            var item = {
+                data,
+                callback: rejectOnError ?
+                    promiseCallback :
+                    (callback || promiseCallback)
+            };
+
+            if (insertAtFront) {
+                q._tasks.unshift(item);
+            } else {
+                q._tasks.push(item);
+            }
+
+            if (!processingScheduled) {
+                processingScheduled = true;
+                setImmediate$1(() => {
+                    processingScheduled = false;
+                    q.process();
+                });
+            }
+
+            if (rejectOnError || !callback) {
+                return new Promise((resolve, reject) => {
+                    res = resolve;
+                    rej = reject;
+                })
+            }
+        }
+
+        function _createCB(tasks) {
+            return function (err, ...args) {
+                numRunning -= 1;
+
+                for (var i = 0, l = tasks.length; i < l; i++) {
+                    var task = tasks[i];
+
+                    var index = workersList.indexOf(task);
+                    if (index === 0) {
+                        workersList.shift();
+                    } else if (index > 0) {
+                        workersList.splice(index, 1);
+                    }
+
+                    task.callback(err, ...args);
+
+                    if (err != null) {
+                        trigger('error', err, task.data);
+                    }
+                }
+
+                if (numRunning <= (q.concurrency - q.buffer) ) {
+                    trigger('unsaturated');
+                }
+
+                if (q.idle()) {
+                    trigger('drain');
+                }
+                q.process();
+            };
+        }
+
+        function _maybeDrain(data) {
+            if (data.length === 0 && q.idle()) {
+                // call drain immediately if there are no tasks
+                setImmediate$1(() => trigger('drain'));
+                return true
+            }
+            return false
+        }
+
+        const eventMethod = (name) => (handler) => {
+            if (!handler) {
+                return new Promise((resolve, reject) => {
+                    once(name, (err, data) => {
+                        if (err) return reject(err)
+                        resolve(data);
+                    });
+                })
+            }
+            off(name);
+            on(name, handler);
+
+        };
+
+        var isProcessing = false;
+        var q = {
+            _tasks: new DLL(),
+            *[Symbol.iterator] () {
+                yield* q._tasks[Symbol.iterator]();
+            },
+            concurrency,
+            payload,
+            buffer: concurrency / 4,
+            started: false,
+            paused: false,
+            push (data, callback) {
+                if (Array.isArray(data)) {
+                    if (_maybeDrain(data)) return
+                    return data.map(datum => _insert(datum, false, false, callback))
+                }
+                return _insert(data, false, false, callback);
+            },
+            pushAsync (data, callback) {
+                if (Array.isArray(data)) {
+                    if (_maybeDrain(data)) return
+                    return data.map(datum => _insert(datum, false, true, callback))
+                }
+                return _insert(data, false, true, callback);
+            },
+            kill () {
+                off();
+                q._tasks.empty();
+            },
+            unshift (data, callback) {
+                if (Array.isArray(data)) {
+                    if (_maybeDrain(data)) return
+                    return data.map(datum => _insert(datum, true, false, callback))
+                }
+                return _insert(data, true, false, callback);
+            },
+            unshiftAsync (data, callback) {
+                if (Array.isArray(data)) {
+                    if (_maybeDrain(data)) return
+                    return data.map(datum => _insert(datum, true, true, callback))
+                }
+                return _insert(data, true, true, callback);
+            },
+            remove (testFn) {
+                q._tasks.remove(testFn);
+            },
+            process () {
+                // Avoid trying to start too many processing operations. This can occur
+                // when callbacks resolve synchronously (#1267).
+                if (isProcessing) {
+                    return;
+                }
+                isProcessing = true;
+                while(!q.paused && numRunning < q.concurrency && q._tasks.length){
+                    var tasks = [], data = [];
+                    var l = q._tasks.length;
+                    if (q.payload) l = Math.min(l, q.payload);
+                    for (var i = 0; i < l; i++) {
+                        var node = q._tasks.shift();
+                        tasks.push(node);
+                        workersList.push(node);
+                        data.push(node.data);
+                    }
+
+                    numRunning += 1;
+
+                    if (q._tasks.length === 0) {
+                        trigger('empty');
+                    }
+
+                    if (numRunning === q.concurrency) {
+                        trigger('saturated');
+                    }
+
+                    var cb = onlyOnce(_createCB(tasks));
+                    _worker(data, cb);
+                }
+                isProcessing = false;
+            },
+            length () {
+                return q._tasks.length;
+            },
+            running () {
+                return numRunning;
+            },
+            workersList () {
+                return workersList;
+            },
+            idle() {
+                return q._tasks.length + numRunning === 0;
+            },
+            pause () {
+                q.paused = true;
+            },
+            resume () {
+                if (q.paused === false) { return; }
+                q.paused = false;
+                setImmediate$1(q.process);
+            }
+        };
+        // define these as fixed properties, so people get useful errors when updating
+        Object.defineProperties(q, {
+            saturated: {
+                writable: false,
+                value: eventMethod('saturated')
+            },
+            unsaturated: {
+                writable: false,
+                value: eventMethod('unsaturated')
+            },
+            empty: {
+                writable: false,
+                value: eventMethod('empty')
+            },
+            drain: {
+                writable: false,
+                value: eventMethod('drain')
+            },
+            error: {
+                writable: false,
+                value: eventMethod('error')
+            },
+        });
+        return q;
+    }
+
+    /**
+     * Creates a `cargo` object with the specified payload. Tasks added to the
+     * cargo will be processed altogether (up to the `payload` limit). If the
+     * `worker` is in progress, the task is queued until it becomes available. Once
+     * the `worker` has completed some tasks, each callback of those tasks is
+     * called. Check out [these](https://camo.githubusercontent.com/6bbd36f4cf5b35a0f11a96dcd2e97711ffc2fb37/68747470733a2f2f662e636c6f75642e6769746875622e636f6d2f6173736574732f313637363837312f36383130382f62626330636662302d356632392d313165322d393734662d3333393763363464633835382e676966) [animations](https://camo.githubusercontent.com/f4810e00e1c5f5f8addbe3e9f49064fd5d102699/68747470733a2f2f662e636c6f75642e6769746875622e636f6d2f6173736574732f313637363837312f36383130312f38346339323036362d356632392d313165322d383134662d3964336430323431336266642e676966)
+     * for how `cargo` and `queue` work.
+     *
+     * While [`queue`]{@link module:ControlFlow.queue} passes only one task to one of a group of workers
+     * at a time, cargo passes an array of tasks to a single worker, repeating
+     * when the worker is finished.
+     *
+     * @name cargo
+     * @static
+     * @memberOf module:ControlFlow
+     * @method
+     * @see [async.queue]{@link module:ControlFlow.queue}
+     * @category Control Flow
+     * @param {AsyncFunction} worker - An asynchronous function for processing an array
+     * of queued tasks. Invoked with `(tasks, callback)`.
+     * @param {number} [payload=Infinity] - An optional `integer` for determining
+     * how many tasks should be processed per round; if omitted, the default is
+     * unlimited.
+     * @returns {module:ControlFlow.QueueObject} A cargo object to manage the tasks. Callbacks can
+     * attached as certain properties to listen for specific events during the
+     * lifecycle of the cargo and inner queue.
+     * @example
+     *
+     * // create a cargo object with payload 2
+     * var cargo = async.cargo(function(tasks, callback) {
+     *     for (var i=0; i<tasks.length; i++) {
+     *         console.log('hello ' + tasks[i].name);
+     *     }
+     *     callback();
+     * }, 2);
+     *
+     * // add some items
+     * cargo.push({name: 'foo'}, function(err) {
+     *     console.log('finished processing foo');
+     * });
+     * cargo.push({name: 'bar'}, function(err) {
+     *     console.log('finished processing bar');
+     * });
+     * await cargo.push({name: 'baz'});
+     * console.log('finished processing baz');
+     */
+    function cargo(worker, payload) {
+        return queue(worker, 1, payload);
+    }
+
+    /**
+     * Creates a `cargoQueue` object with the specified payload. Tasks added to the
+     * cargoQueue will be processed together (up to the `payload` limit) in `concurrency` parallel workers.
+     * If the all `workers` are in progress, the task is queued until one becomes available. Once
+     * a `worker` has completed some tasks, each callback of those tasks is
+     * called. Check out [these](https://camo.githubusercontent.com/6bbd36f4cf5b35a0f11a96dcd2e97711ffc2fb37/68747470733a2f2f662e636c6f75642e6769746875622e636f6d2f6173736574732f313637363837312f36383130382f62626330636662302d356632392d313165322d393734662d3333393763363464633835382e676966) [animations](https://camo.githubusercontent.com/f4810e00e1c5f5f8addbe3e9f49064fd5d102699/68747470733a2f2f662e636c6f75642e6769746875622e636f6d2f6173736574732f313637363837312f36383130312f38346339323036362d356632392d313165322d383134662d3964336430323431336266642e676966)
+     * for how `cargo` and `queue` work.
+     *
+     * While [`queue`]{@link module:ControlFlow.queue} passes only one task to one of a group of workers
+     * at a time, and [`cargo`]{@link module:ControlFlow.cargo} passes an array of tasks to a single worker,
+     * the cargoQueue passes an array of tasks to multiple parallel workers.
+     *
+     * @name cargoQueue
+     * @static
+     * @memberOf module:ControlFlow
+     * @method
+     * @see [async.queue]{@link module:ControlFlow.queue}
+     * @see [async.cargo]{@link module:ControlFLow.cargo}
+     * @category Control Flow
+     * @param {AsyncFunction} worker - An asynchronous function for processing an array
+     * of queued tasks. Invoked with `(tasks, callback)`.
+     * @param {number} [concurrency=1] - An `integer` for determining how many
+     * `worker` functions should be run in parallel.  If omitted, the concurrency
+     * defaults to `1`.  If the concurrency is `0`, an error is thrown.
+     * @param {number} [payload=Infinity] - An optional `integer` for determining
+     * how many tasks should be processed per round; if omitted, the default is
+     * unlimited.
+     * @returns {module:ControlFlow.QueueObject} A cargoQueue object to manage the tasks. Callbacks can
+     * attached as certain properties to listen for specific events during the
+     * lifecycle of the cargoQueue and inner queue.
+     * @example
+     *
+     * // create a cargoQueue object with payload 2 and concurrency 2
+     * var cargoQueue = async.cargoQueue(function(tasks, callback) {
+     *     for (var i=0; i<tasks.length; i++) {
+     *         console.log('hello ' + tasks[i].name);
+     *     }
+     *     callback();
+     * }, 2, 2);
+     *
+     * // add some items
+     * cargoQueue.push({name: 'foo'}, function(err) {
+     *     console.log('finished processing foo');
+     * });
+     * cargoQueue.push({name: 'bar'}, function(err) {
+     *     console.log('finished processing bar');
+     * });
+     * cargoQueue.push({name: 'baz'}, function(err) {
+     *     console.log('finished processing baz');
+     * });
+     * cargoQueue.push({name: 'boo'}, function(err) {
+     *     console.log('finished processing boo');
+     * });
+     */
+    function cargo$1(worker, concurrency, payload) {
+        return queue(worker, concurrency, payload);
+    }
+
+    /**
+     * Reduces `coll` into a single value using an async `iteratee` to return each
+     * successive step. `memo` is the initial state of the reduction. This function
+     * only operates in series.
+     *
+     * For performance reasons, it may make sense to split a call to this function
+     * into a parallel map, and then use the normal `Array.prototype.reduce` on the
+     * results. This function is for situations where each step in the reduction
+     * needs to be async; if you can get the data before reducing it, then it's
+     * probably a good idea to do so.
+     *
+     * @name reduce
+     * @static
+     * @memberOf module:Collections
+     * @method
+     * @alias inject
+     * @alias foldl
+     * @category Collection
+     * @param {Array|Iterable|AsyncIterable|Object} coll - A collection to iterate over.
+     * @param {*} memo - The initial state of the reduction.
+     * @param {AsyncFunction} iteratee - A function applied to each item in the
+     * array to produce the next step in the reduction.
+     * The `iteratee` should complete with the next state of the reduction.
+     * If the iteratee completes with an error, the reduction is stopped and the
+     * main `callback` is immediately called with the error.
+     * Invoked with (memo, item, callback).
+     * @param {Function} [callback] - A callback which is called after all the
+     * `iteratee` functions have finished. Result is the reduced value. Invoked with
+     * (err, result).
+     * @returns {Promise} a promise, if no callback is passed
+     * @example
+     *
+     * // file1.txt is a file that is 1000 bytes in size
+     * // file2.txt is a file that is 2000 bytes in size
+     * // file3.txt is a file that is 3000 bytes in size
+     * // file4.txt does not exist
+     *
+     * const fileList = ['file1.txt','file2.txt','file3.txt'];
+     * const withMissingFileList = ['file1.txt','file2.txt','file3.txt', 'file4.txt'];
+     *
+     * // asynchronous function that computes the file size in bytes
+     * // file size is added to the memoized value, then returned
+     * function getFileSizeInBytes(memo, file, callback) {
+     *     fs.stat(file, function(err, stat) {
+     *         if (err) {
+     *             return callback(err);
+     *         }
+     *         callback(null, memo + stat.size);
+     *     });
+     * }
+     *
+     * // Using callbacks
+     * async.reduce(fileList, 0, getFileSizeInBytes, function(err, result) {
+     *     if (err) {
+     *         console.log(err);
+     *     } else {
+     *         console.log(result);
+     *         // 6000
+     *         // which is the sum of the file sizes of the three files
+     *     }
+     * });
+     *
+     * // Error Handling
+     * async.reduce(withMissingFileList, 0, getFileSizeInBytes, function(err, result) {
+     *     if (err) {
+     *         console.log(err);
+     *         // [ Error: ENOENT: no such file or directory ]
+     *     } else {
+     *         console.log(result);
+     *     }
+     * });
+     *
+     * // Using Promises
+     * async.reduce(fileList, 0, getFileSizeInBytes)
+     * .then( result => {
+     *     console.log(result);
+     *     // 6000
+     *     // which is the sum of the file sizes of the three files
+     * }).catch( err => {
+     *     console.log(err);
+     * });
+     *
+     * // Error Handling
+     * async.reduce(withMissingFileList, 0, getFileSizeInBytes)
+     * .then( result => {
+     *     console.log(result);
+     * }).catch( err => {
+     *     console.log(err);
+     *     // [ Error: ENOENT: no such file or directory ]
+     * });
+     *
+     * // Using async/await
+     * async () => {
+     *     try {
+     *         let result = await async.reduce(fileList, 0, getFileSizeInBytes);
+     *         console.log(result);
+     *         // 6000
+     *         // which is the sum of the file sizes of the three files
+     *     }
+     *     catch (err) {
+     *         console.log(err);
+     *     }
+     * }
+     *
+     * // Error Handling
+     * async () => {
+     *     try {
+     *         let result = await async.reduce(withMissingFileList, 0, getFileSizeInBytes);
+     *         console.log(result);
+     *     }
+     *     catch (err) {
+     *         console.log(err);
+     *         // [ Error: ENOENT: no such file or directory ]
+     *     }
+     * }
+     *
+     */
+    function reduce(coll, memo, iteratee, callback) {
+        callback = once(callback);
+        var _iteratee = wrapAsync(iteratee);
+        return eachOfSeries$1(coll, (x, i, iterCb) => {
+            _iteratee(memo, x, (err, v) => {
+                memo = v;
+                iterCb(err);
+            });
+        }, err => callback(err, memo));
+    }
+    var reduce$1 = awaitify(reduce, 4);
+
+    /**
+     * Version of the compose function that is more natural to read. Each function
+     * consumes the return value of the previous function. It is the equivalent of
+     * [compose]{@link module:ControlFlow.compose} with the arguments reversed.
+     *
+     * Each function is executed with the `this` binding of the composed function.
+     *
+     * @name seq
+     * @static
+     * @memberOf module:ControlFlow
+     * @method
+     * @see [async.compose]{@link module:ControlFlow.compose}
+     * @category Control Flow
+     * @param {...AsyncFunction} functions - the asynchronous functions to compose
+     * @returns {Function} a function that composes the `functions` in order
+     * @example
+     *
+     * // Requires lodash (or underscore), express3 and dresende's orm2.
+     * // Part of an app, that fetches cats of the logged user.
+     * // This example uses `seq` function to avoid overnesting and error
+     * // handling clutter.
+     * app.get('/cats', function(request, response) {
+     *     var User = request.models.User;
+     *     async.seq(
+     *         User.get.bind(User),  // 'User.get' has signature (id, callback(err, data))
+     *         function(user, fn) {
+     *             user.getCats(fn);      // 'getCats' has signature (callback(err, data))
+     *         }
+     *     )(req.session.user_id, function (err, cats) {
+     *         if (err) {
+     *             console.error(err);
+     *             response.json({ status: 'error', message: err.message });
+     *         } else {
+     *             response.json({ status: 'ok', message: 'Cats found', data: cats });
+     *         }
+     *     });
+     * });
+     */
+    function seq(...functions) {
+        var _functions = functions.map(wrapAsync);
+        return function (...args) {
+            var that = this;
+
+            var cb = args[args.length - 1];
+            if (typeof cb == 'function') {
+                args.pop();
+            } else {
+                cb = promiseCallback();
+            }
+
+            reduce$1(_functions, args, (newargs, fn, iterCb) => {
+                fn.apply(that, newargs.concat((err, ...nextargs) => {
+                    iterCb(err, nextargs);
+                }));
+            },
+            (err, results) => cb(err, ...results));
+
+            return cb[PROMISE_SYMBOL]
+        };
+    }
+
+    /**
+     * Creates a function which is a composition of the passed asynchronous
+     * functions. Each function consumes the return value of the function that
+     * follows. Composing functions `f()`, `g()`, and `h()` would produce the result
+     * of `f(g(h()))`, only this version uses callbacks to obtain the return values.
+     *
+     * If the last argument to the composed function is not a function, a promise
+     * is returned when you call it.
+     *
+     * Each function is executed with the `this` binding of the composed function.
+     *
+     * @name compose
+     * @static
+     * @memberOf module:ControlFlow
+     * @method
+     * @category Control Flow
+     * @param {...AsyncFunction} functions - the asynchronous functions to compose
+     * @returns {Function} an asynchronous function that is the composed
+     * asynchronous `functions`
+     * @example
+     *
+     * function add1(n, callback) {
+     *     setTimeout(function () {
+     *         callback(null, n + 1);
+     *     }, 10);
+     * }
+     *
+     * function mul3(n, callback) {
+     *     setTimeout(function () {
+     *         callback(null, n * 3);
+     *     }, 10);
+     * }
+     *
+     * var add1mul3 = async.compose(mul3, add1);
+     * add1mul3(4, function (err, result) {
+     *     // result now equals 15
+     * });
+     */
+    function compose(...args) {
+        return seq(...args.reverse());
+    }
+
+    /**
+     * The same as [`map`]{@link module:Collections.map} but runs a maximum of `limit` async operations at a time.
+     *
+     * @name mapLimit
+     * @static
+     * @memberOf module:Collections
+     * @method
+     * @see [async.map]{@link module:Collections.map}
+     * @category Collection
+     * @param {Array|Iterable|AsyncIterable|Object} coll - A collection to iterate over.
+     * @param {number} limit - The maximum number of async operations at a time.
+     * @param {AsyncFunction} iteratee - An async function to apply to each item in
+     * `coll`.
+     * The iteratee should complete with the transformed item.
+     * Invoked with (item, callback).
+     * @param {Function} [callback] - A callback which is called when all `iteratee`
+     * functions have finished, or an error occurs. Results is an array of the
+     * transformed items from the `coll`. Invoked with (err, results).
+     * @returns {Promise} a promise, if no callback is passed
+     */
+    function mapLimit (coll, limit, iteratee, callback) {
+        return _asyncMap(eachOfLimit(limit), coll, iteratee, callback)
+    }
+    var mapLimit$1 = awaitify(mapLimit, 4);
+
+    /**
+     * The same as [`concat`]{@link module:Collections.concat} but runs a maximum of `limit` async operations at a time.
+     *
+     * @name concatLimit
+     * @static
+     * @memberOf module:Collections
+     * @method
+     * @see [async.concat]{@link module:Collections.concat}
+     * @category Collection
+     * @alias flatMapLimit
+     * @param {Array|Iterable|AsyncIterable|Object} coll - A collection to iterate over.
+     * @param {number} limit - The maximum number of async operations at a time.
+     * @param {AsyncFunction} iteratee - A function to apply to each item in `coll`,
+     * which should use an array as its result. Invoked with (item, callback).
+     * @param {Function} [callback] - A callback which is called after all the
+     * `iteratee` functions have finished, or an error occurs. Results is an array
+     * containing the concatenated results of the `iteratee` function. Invoked with
+     * (err, results).
+     * @returns A Promise, if no callback is passed
+     */
+    function concatLimit(coll, limit, iteratee, callback) {
+        var _iteratee = wrapAsync(iteratee);
+        return mapLimit$1(coll, limit, (val, iterCb) => {
+            _iteratee(val, (err, ...args) => {
+                if (err) return iterCb(err);
+                return iterCb(err, args);
+            });
+        }, (err, mapResults) => {
+            var result = [];
+            for (var i = 0; i < mapResults.length; i++) {
+                if (mapResults[i]) {
+                    result = result.concat(...mapResults[i]);
+                }
+            }
+
+            return callback(err, result);
+        });
+    }
+    var concatLimit$1 = awaitify(concatLimit, 4);
+
+    /**
+     * Applies `iteratee` to each item in `coll`, concatenating the results. Returns
+     * the concatenated list. The `iteratee`s are called in parallel, and the
+     * results are concatenated as they return. The results array will be returned in
+     * the original order of `coll` passed to the `iteratee` function.
+     *
+     * @name concat
+     * @static
+     * @memberOf module:Collections
+     * @method
+     * @category Collection
+     * @alias flatMap
+     * @param {Array|Iterable|AsyncIterable|Object} coll - A collection to iterate over.
+     * @param {AsyncFunction} iteratee - A function to apply to each item in `coll`,
+     * which should use an array as its result. Invoked with (item, callback).
+     * @param {Function} [callback] - A callback which is called after all the
+     * `iteratee` functions have finished, or an error occurs. Results is an array
+     * containing the concatenated results of the `iteratee` function. Invoked with
+     * (err, results).
+     * @returns A Promise, if no callback is passed
+     * @example
+     *
+     * // dir1 is a directory that contains file1.txt, file2.txt
+     * // dir2 is a directory that contains file3.txt, file4.txt
+     * // dir3 is a directory that contains file5.txt
+     * // dir4 does not exist
+     *
+     * let directoryList = ['dir1','dir2','dir3'];
+     * let withMissingDirectoryList = ['dir1','dir2','dir3', 'dir4'];
+     *
+     * // Using callbacks
+     * async.concat(directoryList, fs.readdir, function(err, results) {
+     *    if (err) {
+     *        console.log(err);
+     *    } else {
+     *        console.log(results);
+     *        // [ 'file1.txt', 'file2.txt', 'file3.txt', 'file4.txt', file5.txt ]
+     *    }
+     * });
+     *
+     * // Error Handling
+     * async.concat(withMissingDirectoryList, fs.readdir, function(err, results) {
+     *    if (err) {
+     *        console.log(err);
+     *        // [ Error: ENOENT: no such file or directory ]
+     *        // since dir4 does not exist
+     *    } else {
+     *        console.log(results);
+     *    }
+     * });
+     *
+     * // Using Promises
+     * async.concat(directoryList, fs.readdir)
+     * .then(results => {
+     *     console.log(results);
+     *     // [ 'file1.txt', 'file2.txt', 'file3.txt', 'file4.txt', file5.txt ]
+     * }).catch(err => {
+     *      console.log(err);
+     * });
+     *
+     * // Error Handling
+     * async.concat(withMissingDirectoryList, fs.readdir)
+     * .then(results => {
+     *     console.log(results);
+     * }).catch(err => {
+     *     console.log(err);
+     *     // [ Error: ENOENT: no such file or directory ]
+     *     // since dir4 does not exist
+     * });
+     *
+     * // Using async/await
+     * async () => {
+     *     try {
+     *         let results = await async.concat(directoryList, fs.readdir);
+     *         console.log(results);
+     *         // [ 'file1.txt', 'file2.txt', 'file3.txt', 'file4.txt', file5.txt ]
+     *     } catch (err) {
+     *         console.log(err);
+     *     }
+     * }
+     *
+     * // Error Handling
+     * async () => {
+     *     try {
+     *         let results = await async.concat(withMissingDirectoryList, fs.readdir);
+     *         console.log(results);
+     *     } catch (err) {
+     *         console.log(err);
+     *         // [ Error: ENOENT: no such file or directory ]
+     *         // since dir4 does not exist
+     *     }
+     * }
+     *
+     */
+    function concat(coll, iteratee, callback) {
+        return concatLimit$1(coll, Infinity, iteratee, callback)
+    }
+    var concat$1 = awaitify(concat, 3);
+
+    /**
+     * The same as [`concat`]{@link module:Collections.concat} but runs only a single async operation at a time.
+     *
+     * @name concatSeries
+     * @static
+     * @memberOf module:Collections
+     * @method
+     * @see [async.concat]{@link module:Collections.concat}
+     * @category Collection
+     * @alias flatMapSeries
+     * @param {Array|Iterable|AsyncIterable|Object} coll - A collection to iterate over.
+     * @param {AsyncFunction} iteratee - A function to apply to each item in `coll`.
+     * The iteratee should complete with an array an array of results.
+     * Invoked with (item, callback).
+     * @param {Function} [callback] - A callback which is called after all the
+     * `iteratee` functions have finished, or an error occurs. Results is an array
+     * containing the concatenated results of the `iteratee` function. Invoked with
+     * (err, results).
+     * @returns A Promise, if no callback is passed
+     */
+    function concatSeries(coll, iteratee, callback) {
+        return concatLimit$1(coll, 1, iteratee, callback)
+    }
+    var concatSeries$1 = awaitify(concatSeries, 3);
+
+    /**
+     * Returns a function that when called, calls-back with the values provided.
+     * Useful as the first function in a [`waterfall`]{@link module:ControlFlow.waterfall}, or for plugging values in to
+     * [`auto`]{@link module:ControlFlow.auto}.
+     *
+     * @name constant
+     * @static
+     * @memberOf module:Utils
+     * @method
+     * @category Util
+     * @param {...*} arguments... - Any number of arguments to automatically invoke
+     * callback with.
+     * @returns {AsyncFunction} Returns a function that when invoked, automatically
+     * invokes the callback with the previous given arguments.
+     * @example
+     *
+     * async.waterfall([
+     *     async.constant(42),
+     *     function (value, next) {
+     *         // value === 42
+     *     },
+     *     //...
+     * ], callback);
+     *
+     * async.waterfall([
+     *     async.constant(filename, "utf8"),
+     *     fs.readFile,
+     *     function (fileData, next) {
+     *         //...
+     *     }
+     *     //...
+     * ], callback);
+     *
+     * async.auto({
+     *     hostname: async.constant("https://server.net/"),
+     *     port: findFreePort,
+     *     launchServer: ["hostname", "port", function (options, cb) {
+     *         startServer(options, cb);
+     *     }],
+     *     //...
+     * }, callback);
+     */
+    function constant(...args) {
+        return function (...ignoredArgs/*, callback*/) {
+            var callback = ignoredArgs.pop();
+            return callback(null, ...args);
+        };
+    }
+
+    function _createTester(check, getResult) {
+        return (eachfn, arr, _iteratee, cb) => {
+            var testPassed = false;
+            var testResult;
+            const iteratee = wrapAsync(_iteratee);
+            eachfn(arr, (value, _, callback) => {
+                iteratee(value, (err, result) => {
+                    if (err || err === false) return callback(err);
+
+                    if (check(result) && !testResult) {
+                        testPassed = true;
+                        testResult = getResult(true, value);
+                        return callback(null, breakLoop);
+                    }
+                    callback();
+                });
+            }, err => {
+                if (err) return cb(err);
+                cb(null, testPassed ? testResult : getResult(false));
+            });
+        };
+    }
+
+    /**
+     * Returns the first value in `coll` that passes an async truth test. The
+     * `iteratee` is applied in parallel, meaning the first iteratee to return
+     * `true` will fire the detect `callback` with that result. That means the
+     * result might not be the first item in the original `coll` (in terms of order)
+     * that passes the test.
+
+     * If order within the original `coll` is important, then look at
+     * [`detectSeries`]{@link module:Collections.detectSeries}.
+     *
+     * @name detect
+     * @static
+     * @memberOf module:Collections
+     * @method
+     * @alias find
+     * @category Collections
+     * @param {Array|Iterable|AsyncIterable|Object} coll - A collection to iterate over.
+     * @param {AsyncFunction} iteratee - A truth test to apply to each item in `coll`.
+     * The iteratee must complete with a boolean value as its result.
+     * Invoked with (item, callback).
+     * @param {Function} [callback] - A callback which is called as soon as any
+     * iteratee returns `true`, or after all the `iteratee` functions have finished.
+     * Result will be the first item in the array that passes the truth test
+     * (iteratee) or the value `undefined` if none passed. Invoked with
+     * (err, result).
+     * @returns A Promise, if no callback is passed
+     * @example
+     *
+     * // dir1 is a directory that contains file1.txt, file2.txt
+     * // dir2 is a directory that contains file3.txt, file4.txt
+     * // dir3 is a directory that contains file5.txt
+     *
+     * // asynchronous function that checks if a file exists
+     * function fileExists(file, callback) {
+     *    fs.access(file, fs.constants.F_OK, (err) => {
+     *        callback(null, !err);
+     *    });
+     * }
+     *
+     * async.detect(['file3.txt','file2.txt','dir1/file1.txt'], fileExists,
+     *    function(err, result) {
+     *        console.log(result);
+     *        // dir1/file1.txt
+     *        // result now equals the first file in the list that exists
+     *    }
+     *);
+     *
+     * // Using Promises
+     * async.detect(['file3.txt','file2.txt','dir1/file1.txt'], fileExists)
+     * .then(result => {
+     *     console.log(result);
+     *     // dir1/file1.txt
+     *     // result now equals the first file in the list that exists
+     * }).catch(err => {
+     *     console.log(err);
+     * });
+     *
+     * // Using async/await
+     * async () => {
+     *     try {
+     *         let result = await async.detect(['file3.txt','file2.txt','dir1/file1.txt'], fileExists);
+     *         console.log(result);
+     *         // dir1/file1.txt
+     *         // result now equals the file in the list that exists
+     *     }
+     *     catch (err) {
+     *         console.log(err);
+     *     }
+     * }
+     *
+     */
+    function detect(coll, iteratee, callback) {
+        return _createTester(bool => bool, (res, item) => item)(eachOf$1, coll, iteratee, callback)
+    }
+    var detect$1 = awaitify(detect, 3);
+
+    /**
+     * The same as [`detect`]{@link module:Collections.detect} but runs a maximum of `limit` async operations at a
+     * time.
+     *
+     * @name detectLimit
+     * @static
+     * @memberOf module:Collections
+     * @method
+     * @see [async.detect]{@link module:Collections.detect}
+     * @alias findLimit
+     * @category Collections
+     * @param {Array|Iterable|AsyncIterable|Object} coll - A collection to iterate over.
+     * @param {number} limit - The maximum number of async operations at a time.
+     * @param {AsyncFunction} iteratee - A truth test to apply to each item in `coll`.
+     * The iteratee must complete with a boolean value as its result.
+     * Invoked with (item, callback).
+     * @param {Function} [callback] - A callback which is called as soon as any
+     * iteratee returns `true`, or after all the `iteratee` functions have finished.
+     * Result will be the first item in the array that passes the truth test
+     * (iteratee) or the value `undefined` if none passed. Invoked with
+     * (err, result).
+     * @returns a Promise if no callback is passed
+     */
+    function detectLimit(coll, limit, iteratee, callback) {
+        return _createTester(bool => bool, (res, item) => item)(eachOfLimit(limit), coll, iteratee, callback)
+    }
+    var detectLimit$1 = awaitify(detectLimit, 4);
+
+    /**
+     * The same as [`detect`]{@link module:Collections.detect} but runs only a single async operation at a time.
+     *
+     * @name detectSeries
+     * @static
+     * @memberOf module:Collections
+     * @method
+     * @see [async.detect]{@link module:Collections.detect}
+     * @alias findSeries
+     * @category Collections
+     * @param {Array|Iterable|AsyncIterable|Object} coll - A collection to iterate over.
+     * @param {AsyncFunction} iteratee - A truth test to apply to each item in `coll`.
+     * The iteratee must complete with a boolean value as its result.
+     * Invoked with (item, callback).
+     * @param {Function} [callback] - A callback which is called as soon as any
+     * iteratee returns `true`, or after all the `iteratee` functions have finished.
+     * Result will be the first item in the array that passes the truth test
+     * (iteratee) or the value `undefined` if none passed. Invoked with
+     * (err, result).
+     * @returns a Promise if no callback is passed
+     */
+    function detectSeries(coll, iteratee, callback) {
+        return _createTester(bool => bool, (res, item) => item)(eachOfLimit(1), coll, iteratee, callback)
+    }
+
+    var detectSeries$1 = awaitify(detectSeries, 3);
+
+    function consoleFunc(name) {
+        return (fn, ...args) => wrapAsync(fn)(...args, (err, ...resultArgs) => {
+            /* istanbul ignore else */
+            if (typeof console === 'object') {
+                /* istanbul ignore else */
+                if (err) {
+                    /* istanbul ignore else */
+                    if (console.error) {
+                        console.error(err);
+                    }
+                } else if (console[name]) { /* istanbul ignore else */
+                    resultArgs.forEach(x => console[name](x));
+                }
+            }
+        })
+    }
+
+    /**
+     * Logs the result of an [`async` function]{@link AsyncFunction} to the
+     * `console` using `console.dir` to display the properties of the resulting object.
+     * Only works in Node.js or in browsers that support `console.dir` and
+     * `console.error` (such as FF and Chrome).
+     * If multiple arguments are returned from the async function,
+     * `console.dir` is called on each argument in order.
+     *
+     * @name dir
+     * @static
+     * @memberOf module:Utils
+     * @method
+     * @category Util
+     * @param {AsyncFunction} function - The function you want to eventually apply
+     * all arguments to.
+     * @param {...*} arguments... - Any number of arguments to apply to the function.
+     * @example
+     *
+     * // in a module
+     * var hello = function(name, callback) {
+     *     setTimeout(function() {
+     *         callback(null, {hello: name});
+     *     }, 1000);
+     * };
+     *
+     * // in the node repl
+     * node> async.dir(hello, 'world');
+     * {hello: 'world'}
+     */
+    var dir = consoleFunc('dir');
+
+    /**
+     * The post-check version of [`whilst`]{@link module:ControlFlow.whilst}. To reflect the difference in
+     * the order of operations, the arguments `test` and `iteratee` are switched.
+     *
+     * `doWhilst` is to `whilst` as `do while` is to `while` in plain JavaScript.
+     *
+     * @name doWhilst
+     * @static
+     * @memberOf module:ControlFlow
+     * @method
+     * @see [async.whilst]{@link module:ControlFlow.whilst}
+     * @category Control Flow
+     * @param {AsyncFunction} iteratee - A function which is called each time `test`
+     * passes. Invoked with (callback).
+     * @param {AsyncFunction} test - asynchronous truth test to perform after each
+     * execution of `iteratee`. Invoked with (...args, callback), where `...args` are the
+     * non-error args from the previous callback of `iteratee`.
+     * @param {Function} [callback] - A callback which is called after the test
+     * function has failed and repeated execution of `iteratee` has stopped.
+     * `callback` will be passed an error and any arguments passed to the final
+     * `iteratee`'s callback. Invoked with (err, [results]);
+     * @returns {Promise} a promise, if no callback is passed
+     */
+    function doWhilst(iteratee, test, callback) {
+        callback = onlyOnce(callback);
+        var _fn = wrapAsync(iteratee);
+        var _test = wrapAsync(test);
+        var results;
+
+        function next(err, ...args) {
+            if (err) return callback(err);
+            if (err === false) return;
+            results = args;
+            _test(...args, check);
+        }
+
+        function check(err, truth) {
+            if (err) return callback(err);
+            if (err === false) return;
+            if (!truth) return callback(null, ...results);
+            _fn(next);
+        }
+
+        return check(null, true);
+    }
+
+    var doWhilst$1 = awaitify(doWhilst, 3);
+
+    /**
+     * Like ['doWhilst']{@link module:ControlFlow.doWhilst}, except the `test` is inverted. Note the
+     * argument ordering differs from `until`.
+     *
+     * @name doUntil
+     * @static
+     * @memberOf module:ControlFlow
+     * @method
+     * @see [async.doWhilst]{@link module:ControlFlow.doWhilst}
+     * @category Control Flow
+     * @param {AsyncFunction} iteratee - An async function which is called each time
+     * `test` fails. Invoked with (callback).
+     * @param {AsyncFunction} test - asynchronous truth test to perform after each
+     * execution of `iteratee`. Invoked with (...args, callback), where `...args` are the
+     * non-error args from the previous callback of `iteratee`
+     * @param {Function} [callback] - A callback which is called after the test
+     * function has passed and repeated execution of `iteratee` has stopped. `callback`
+     * will be passed an error and any arguments passed to the final `iteratee`'s
+     * callback. Invoked with (err, [results]);
+     * @returns {Promise} a promise, if no callback is passed
+     */
+    function doUntil(iteratee, test, callback) {
+        const _test = wrapAsync(test);
+        return doWhilst$1(iteratee, (...args) => {
+            const cb = args.pop();
+            _test(...args, (err, truth) => cb (err, !truth));
+        }, callback);
+    }
+
+    function _withoutIndex(iteratee) {
+        return (value, index, callback) => iteratee(value, callback);
+    }
+
+    /**
+     * Applies the function `iteratee` to each item in `coll`, in parallel.
+     * The `iteratee` is called with an item from the list, and a callback for when
+     * it has finished. If the `iteratee` passes an error to its `callback`, the
+     * main `callback` (for the `each` function) is immediately called with the
+     * error.
+     *
+     * Note, that since this function applies `iteratee` to each item in parallel,
+     * there is no guarantee that the iteratee functions will complete in order.
+     *
+     * @name each
+     * @static
+     * @memberOf module:Collections
+     * @method
+     * @alias forEach
+     * @category Collection
+     * @param {Array|Iterable|AsyncIterable|Object} coll - A collection to iterate over.
+     * @param {AsyncFunction} iteratee - An async function to apply to
+     * each item in `coll`. Invoked with (item, callback).
+     * The array index is not passed to the iteratee.
+     * If you need the index, use `eachOf`.
+     * @param {Function} [callback] - A callback which is called when all
+     * `iteratee` functions have finished, or an error occurs. Invoked with (err).
+     * @returns {Promise} a promise, if a callback is omitted
+     * @example
+     *
+     * // dir1 is a directory that contains file1.txt, file2.txt
+     * // dir2 is a directory that contains file3.txt, file4.txt
+     * // dir3 is a directory that contains file5.txt
+     * // dir4 does not exist
+     *
+     * const fileList = [ 'dir1/file2.txt', 'dir2/file3.txt', 'dir/file5.txt'];
+     * const withMissingFileList = ['dir1/file1.txt', 'dir4/file2.txt'];
+     *
+     * // asynchronous function that deletes a file
+     * const deleteFile = function(file, callback) {
+     *     fs.unlink(file, callback);
+     * };
+     *
+     * // Using callbacks
+     * async.each(fileList, deleteFile, function(err) {
+     *     if( err ) {
+     *         console.log(err);
+     *     } else {
+     *         console.log('All files have been deleted successfully');
+     *     }
+     * });
+     *
+     * // Error Handling
+     * async.each(withMissingFileList, deleteFile, function(err){
+     *     console.log(err);
+     *     // [ Error: ENOENT: no such file or directory ]
+     *     // since dir4/file2.txt does not exist
+     *     // dir1/file1.txt could have been deleted
+     * });
+     *
+     * // Using Promises
+     * async.each(fileList, deleteFile)
+     * .then( () => {
+     *     console.log('All files have been deleted successfully');
+     * }).catch( err => {
+     *     console.log(err);
+     * });
+     *
+     * // Error Handling
+     * async.each(fileList, deleteFile)
+     * .then( () => {
+     *     console.log('All files have been deleted successfully');
+     * }).catch( err => {
+     *     console.log(err);
+     *     // [ Error: ENOENT: no such file or directory ]
+     *     // since dir4/file2.txt does not exist
+     *     // dir1/file1.txt could have been deleted
+     * });
+     *
+     * // Using async/await
+     * async () => {
+     *     try {
+     *         await async.each(files, deleteFile);
+     *     }
+     *     catch (err) {
+     *         console.log(err);
+     *     }
+     * }
+     *
+     * // Error Handling
+     * async () => {
+     *     try {
+     *         await async.each(withMissingFileList, deleteFile);
+     *     }
+     *     catch (err) {
+     *         console.log(err);
+     *         // [ Error: ENOENT: no such file or directory ]
+     *         // since dir4/file2.txt does not exist
+     *         // dir1/file1.txt could have been deleted
+     *     }
+     * }
+     *
+     */
+    function eachLimit(coll, iteratee, callback) {
+        return eachOf$1(coll, _withoutIndex(wrapAsync(iteratee)), callback);
+    }
+
+    var each = awaitify(eachLimit, 3);
+
+    /**
+     * The same as [`each`]{@link module:Collections.each} but runs a maximum of `limit` async operations at a time.
+     *
+     * @name eachLimit
+     * @static
+     * @memberOf module:Collections
+     * @method
+     * @see [async.each]{@link module:Collections.each}
+     * @alias forEachLimit
+     * @category Collection
+     * @param {Array|Iterable|AsyncIterable|Object} coll - A collection to iterate over.
+     * @param {number} limit - The maximum number of async operations at a time.
+     * @param {AsyncFunction} iteratee - An async function to apply to each item in
+     * `coll`.
+     * The array index is not passed to the iteratee.
+     * If you need the index, use `eachOfLimit`.
+     * Invoked with (item, callback).
+     * @param {Function} [callback] - A callback which is called when all
+     * `iteratee` functions have finished, or an error occurs. Invoked with (err).
+     * @returns {Promise} a promise, if a callback is omitted
+     */
+    function eachLimit$1(coll, limit, iteratee, callback) {
+        return eachOfLimit(limit)(coll, _withoutIndex(wrapAsync(iteratee)), callback);
+    }
+    var eachLimit$2 = awaitify(eachLimit$1, 4);
+
+    /**
+     * The same as [`each`]{@link module:Collections.each} but runs only a single async operation at a time.
+     *
+     * Note, that unlike [`each`]{@link module:Collections.each}, this function applies iteratee to each item
+     * in series and therefore the iteratee functions will complete in order.
+
+     * @name eachSeries
+     * @static
+     * @memberOf module:Collections
+     * @method
+     * @see [async.each]{@link module:Collections.each}
+     * @alias forEachSeries
+     * @category Collection
+     * @param {Array|Iterable|AsyncIterable|Object} coll - A collection to iterate over.
+     * @param {AsyncFunction} iteratee - An async function to apply to each
+     * item in `coll`.
+     * The array index is not passed to the iteratee.
+     * If you need the index, use `eachOfSeries`.
+     * Invoked with (item, callback).
+     * @param {Function} [callback] - A callback which is called when all
+     * `iteratee` functions have finished, or an error occurs. Invoked with (err).
+     * @returns {Promise} a promise, if a callback is omitted
+     */
+    function eachSeries(coll, iteratee, callback) {
+        return eachLimit$2(coll, 1, iteratee, callback)
+    }
+    var eachSeries$1 = awaitify(eachSeries, 3);
+
+    /**
+     * Wrap an async function and ensure it calls its callback on a later tick of
+     * the event loop.  If the function already calls its callback on a next tick,
+     * no extra deferral is added. This is useful for preventing stack overflows
+     * (`RangeError: Maximum call stack size exceeded`) and generally keeping
+     * [Zalgo](http://blog.izs.me/post/59142742143/designing-apis-for-asynchrony)
+     * contained. ES2017 `async` functions are returned as-is -- they are immune
+     * to Zalgo's corrupting influences, as they always resolve on a later tick.
+     *
+     * @name ensureAsync
+     * @static
+     * @memberOf module:Utils
+     * @method
+     * @category Util
+     * @param {AsyncFunction} fn - an async function, one that expects a node-style
+     * callback as its last argument.
+     * @returns {AsyncFunction} Returns a wrapped function with the exact same call
+     * signature as the function passed in.
+     * @example
+     *
+     * function sometimesAsync(arg, callback) {
+     *     if (cache[arg]) {
+     *         return callback(null, cache[arg]); // this would be synchronous!!
+     *     } else {
+     *         doSomeIO(arg, callback); // this IO would be asynchronous
+     *     }
+     * }
+     *
+     * // this has a risk of stack overflows if many results are cached in a row
+     * async.mapSeries(args, sometimesAsync, done);
+     *
+     * // this will defer sometimesAsync's callback if necessary,
+     * // preventing stack overflows
+     * async.mapSeries(args, async.ensureAsync(sometimesAsync), done);
+     */
+    function ensureAsync(fn) {
+        if (isAsync(fn)) return fn;
+        return function (...args/*, callback*/) {
+            var callback = args.pop();
+            var sync = true;
+            args.push((...innerArgs) => {
+                if (sync) {
+                    setImmediate$1(() => callback(...innerArgs));
+                } else {
+                    callback(...innerArgs);
+                }
+            });
+            fn.apply(this, args);
+            sync = false;
+        };
+    }
+
+    /**
+     * Returns `true` if every element in `coll` satisfies an async test. If any
+     * iteratee call returns `false`, the main `callback` is immediately called.
+     *
+     * @name every
+     * @static
+     * @memberOf module:Collections
+     * @method
+     * @alias all
+     * @category Collection
+     * @param {Array|Iterable|AsyncIterable|Object} coll - A collection to iterate over.
+     * @param {AsyncFunction} iteratee - An async truth test to apply to each item
+     * in the collection in parallel.
+     * The iteratee must complete with a boolean result value.
+     * Invoked with (item, callback).
+     * @param {Function} [callback] - A callback which is called after all the
+     * `iteratee` functions have finished. Result will be either `true` or `false`
+     * depending on the values of the async tests. Invoked with (err, result).
+     * @returns {Promise} a promise, if no callback provided
+     * @example
+     *
+     * // dir1 is a directory that contains file1.txt, file2.txt
+     * // dir2 is a directory that contains file3.txt, file4.txt
+     * // dir3 is a directory that contains file5.txt
+     * // dir4 does not exist
+     *
+     * const fileList = ['dir1/file1.txt','dir2/file3.txt','dir3/file5.txt'];
+     * const withMissingFileList = ['file1.txt','file2.txt','file4.txt'];
+     *
+     * // asynchronous function that checks if a file exists
+     * function fileExists(file, callback) {
+     *    fs.access(file, fs.constants.F_OK, (err) => {
+     *        callback(null, !err);
+     *    });
+     * }
+     *
+     * // Using callbacks
+     * async.every(fileList, fileExists, function(err, result) {
+     *     console.log(result);
+     *     // true
+     *     // result is true since every file exists
+     * });
+     *
+     * async.every(withMissingFileList, fileExists, function(err, result) {
+     *     console.log(result);
+     *     // false
+     *     // result is false since NOT every file exists
+     * });
+     *
+     * // Using Promises
+     * async.every(fileList, fileExists)
+     * .then( result => {
+     *     console.log(result);
+     *     // true
+     *     // result is true since every file exists
+     * }).catch( err => {
+     *     console.log(err);
+     * });
+     *
+     * async.every(withMissingFileList, fileExists)
+     * .then( result => {
+     *     console.log(result);
+     *     // false
+     *     // result is false since NOT every file exists
+     * }).catch( err => {
+     *     console.log(err);
+     * });
+     *
+     * // Using async/await
+     * async () => {
+     *     try {
+     *         let result = await async.every(fileList, fileExists);
+     *         console.log(result);
+     *         // true
+     *         // result is true since every file exists
+     *     }
+     *     catch (err) {
+     *         console.log(err);
+     *     }
+     * }
+     *
+     * async () => {
+     *     try {
+     *         let result = await async.every(withMissingFileList, fileExists);
+     *         console.log(result);
+     *         // false
+     *         // result is false since NOT every file exists
+     *     }
+     *     catch (err) {
+     *         console.log(err);
+     *     }
+     * }
+     *
+     */
+    function every(coll, iteratee, callback) {
+        return _createTester(bool => !bool, res => !res)(eachOf$1, coll, iteratee, callback)
+    }
+    var every$1 = awaitify(every, 3);
+
+    /**
+     * The same as [`every`]{@link module:Collections.every} but runs a maximum of `limit` async operations at a time.
+     *
+     * @name everyLimit
+     * @static
+     * @memberOf module:Collections
+     * @method
+     * @see [async.every]{@link module:Collections.every}
+     * @alias allLimit
+     * @category Collection
+     * @param {Array|Iterable|AsyncIterable|Object} coll - A collection to iterate over.
+     * @param {number} limit - The maximum number of async operations at a time.
+     * @param {AsyncFunction} iteratee - An async truth test to apply to each item
+     * in the collection in parallel.
+     * The iteratee must complete with a boolean result value.
+     * Invoked with (item, callback).
+     * @param {Function} [callback] - A callback which is called after all the
+     * `iteratee` functions have finished. Result will be either `true` or `false`
+     * depending on the values of the async tests. Invoked with (err, result).
+     * @returns {Promise} a promise, if no callback provided
+     */
+    function everyLimit(coll, limit, iteratee, callback) {
+        return _createTester(bool => !bool, res => !res)(eachOfLimit(limit), coll, iteratee, callback)
+    }
+    var everyLimit$1 = awaitify(everyLimit, 4);
+
+    /**
+     * The same as [`every`]{@link module:Collections.every} but runs only a single async operation at a time.
+     *
+     * @name everySeries
+     * @static
+     * @memberOf module:Collections
+     * @method
+     * @see [async.every]{@link module:Collections.every}
+     * @alias allSeries
+     * @category Collection
+     * @param {Array|Iterable|AsyncIterable|Object} coll - A collection to iterate over.
+     * @param {AsyncFunction} iteratee - An async truth test to apply to each item
+     * in the collection in series.
+     * The iteratee must complete with a boolean result value.
+     * Invoked with (item, callback).
+     * @param {Function} [callback] - A callback which is called after all the
+     * `iteratee` functions have finished. Result will be either `true` or `false`
+     * depending on the values of the async tests. Invoked with (err, result).
+     * @returns {Promise} a promise, if no callback provided
+     */
+    function everySeries(coll, iteratee, callback) {
+        return _createTester(bool => !bool, res => !res)(eachOfSeries$1, coll, iteratee, callback)
+    }
+    var everySeries$1 = awaitify(everySeries, 3);
+
+    function filterArray(eachfn, arr, iteratee, callback) {
+        var truthValues = new Array(arr.length);
+        eachfn(arr, (x, index, iterCb) => {
+            iteratee(x, (err, v) => {
+                truthValues[index] = !!v;
+                iterCb(err);
+            });
+        }, err => {
+            if (err) return callback(err);
+            var results = [];
+            for (var i = 0; i < arr.length; i++) {
+                if (truthValues[i]) results.push(arr[i]);
+            }
+            callback(null, results);
+        });
+    }
+
+    function filterGeneric(eachfn, coll, iteratee, callback) {
+        var results = [];
+        eachfn(coll, (x, index, iterCb) => {
+            iteratee(x, (err, v) => {
+                if (err) return iterCb(err);
+                if (v) {
+                    results.push({index, value: x});
+                }
+                iterCb(err);
+            });
+        }, err => {
+            if (err) return callback(err);
+            callback(null, results
+                .sort((a, b) => a.index - b.index)
+                .map(v => v.value));
+        });
+    }
+
+    function _filter(eachfn, coll, iteratee, callback) {
+        var filter = isArrayLike(coll) ? filterArray : filterGeneric;
+        return filter(eachfn, coll, wrapAsync(iteratee), callback);
+    }
+
+    /**
+     * Returns a new array of all the values in `coll` which pass an async truth
+     * test. This operation is performed in parallel, but the results array will be
+     * in the same order as the original.
+     *
+     * @name filter
+     * @static
+     * @memberOf module:Collections
+     * @method
+     * @alias select
+     * @category Collection
+     * @param {Array|Iterable|AsyncIterable|Object} coll - A collection to iterate over.
+     * @param {Function} iteratee - A truth test to apply to each item in `coll`.
+     * The `iteratee` is passed a `callback(err, truthValue)`, which must be called
+     * with a boolean argument once it has completed. Invoked with (item, callback).
+     * @param {Function} [callback] - A callback which is called after all the
+     * `iteratee` functions have finished. Invoked with (err, results).
+     * @returns {Promise} a promise, if no callback provided
+     * @example
+     *
+     * // dir1 is a directory that contains file1.txt, file2.txt
+     * // dir2 is a directory that contains file3.txt, file4.txt
+     * // dir3 is a directory that contains file5.txt
+     *
+     * const files = ['dir1/file1.txt','dir2/file3.txt','dir3/file6.txt'];
+     *
+     * // asynchronous function that checks if a file exists
+     * function fileExists(file, callback) {
+     *    fs.access(file, fs.constants.F_OK, (err) => {
+     *        callback(null, !err);
+     *    });
+     * }
+     *
+     * // Using callbacks
+     * async.filter(files, fileExists, function(err, results) {
+     *    if(err) {
+     *        console.log(err);
+     *    } else {
+     *        console.log(results);
+     *        // [ 'dir1/file1.txt', 'dir2/file3.txt' ]
+     *        // results is now an array of the existing files
+     *    }
+     * });
+     *
+     * // Using Promises
+     * async.filter(files, fileExists)
+     * .then(results => {
+     *     console.log(results);
+     *     // [ 'dir1/file1.txt', 'dir2/file3.txt' ]
+     *     // results is now an array of the existing files
+     * }).catch(err => {
+     *     console.log(err);
+     * });
+     *
+     * // Using async/await
+     * async () => {
+     *     try {
+     *         let results = await async.filter(files, fileExists);
+     *         console.log(results);
+     *         // [ 'dir1/file1.txt', 'dir2/file3.txt' ]
+     *         // results is now an array of the existing files
+     *     }
+     *     catch (err) {
+     *         console.log(err);
+     *     }
+     * }
+     *
+     */
+    function filter (coll, iteratee, callback) {
+        return _filter(eachOf$1, coll, iteratee, callback)
+    }
+    var filter$1 = awaitify(filter, 3);
+
+    /**
+     * The same as [`filter`]{@link module:Collections.filter} but runs a maximum of `limit` async operations at a
+     * time.
+     *
+     * @name filterLimit
+     * @static
+     * @memberOf module:Collections
+     * @method
+     * @see [async.filter]{@link module:Collections.filter}
+     * @alias selectLimit
+     * @category Collection
+     * @param {Array|Iterable|AsyncIterable|Object} coll - A collection to iterate over.
+     * @param {number} limit - The maximum number of async operations at a time.
+     * @param {Function} iteratee - A truth test to apply to each item in `coll`.
+     * The `iteratee` is passed a `callback(err, truthValue)`, which must be called
+     * with a boolean argument once it has completed. Invoked with (item, callback).
+     * @param {Function} [callback] - A callback which is called after all the
+     * `iteratee` functions have finished. Invoked with (err, results).
+     * @returns {Promise} a promise, if no callback provided
+     */
+    function filterLimit (coll, limit, iteratee, callback) {
+        return _filter(eachOfLimit(limit), coll, iteratee, callback)
+    }
+    var filterLimit$1 = awaitify(filterLimit, 4);
+
+    /**
+     * The same as [`filter`]{@link module:Collections.filter} but runs only a single async operation at a time.
+     *
+     * @name filterSeries
+     * @static
+     * @memberOf module:Collections
+     * @method
+     * @see [async.filter]{@link module:Collections.filter}
+     * @alias selectSeries
+     * @category Collection
+     * @param {Array|Iterable|AsyncIterable|Object} coll - A collection to iterate over.
+     * @param {Function} iteratee - A truth test to apply to each item in `coll`.
+     * The `iteratee` is passed a `callback(err, truthValue)`, which must be called
+     * with a boolean argument once it has completed. Invoked with (item, callback).
+     * @param {Function} [callback] - A callback which is called after all the
+     * `iteratee` functions have finished. Invoked with (err, results)
+     * @returns {Promise} a promise, if no callback provided
+     */
+    function filterSeries (coll, iteratee, callback) {
+        return _filter(eachOfSeries$1, coll, iteratee, callback)
+    }
+    var filterSeries$1 = awaitify(filterSeries, 3);
+
+    /**
+     * Calls the asynchronous function `fn` with a callback parameter that allows it
+     * to call itself again, in series, indefinitely.
+
+     * If an error is passed to the callback then `errback` is called with the
+     * error, and execution stops, otherwise it will never be called.
+     *
+     * @name forever
+     * @static
+     * @memberOf module:ControlFlow
+     * @method
+     * @category Control Flow
+     * @param {AsyncFunction} fn - an async function to call repeatedly.
+     * Invoked with (next).
+     * @param {Function} [errback] - when `fn` passes an error to it's callback,
+     * this function will be called, and execution stops. Invoked with (err).
+     * @returns {Promise} a promise that rejects if an error occurs and an errback
+     * is not passed
+     * @example
+     *
+     * async.forever(
+     *     function(next) {
+     *         // next is suitable for passing to things that need a callback(err [, whatever]);
+     *         // it will result in this function being called again.
+     *     },
+     *     function(err) {
+     *         // if next is called with a value in its first parameter, it will appear
+     *         // in here as 'err', and execution will stop.
+     *     }
+     * );
+     */
+    function forever(fn, errback) {
+        var done = onlyOnce(errback);
+        var task = wrapAsync(ensureAsync(fn));
+
+        function next(err) {
+            if (err) return done(err);
+            if (err === false) return;
+            task(next);
+        }
+        return next();
+    }
+    var forever$1 = awaitify(forever, 2);
+
+    /**
+     * The same as [`groupBy`]{@link module:Collections.groupBy} but runs a maximum of `limit` async operations at a time.
+     *
+     * @name groupByLimit
+     * @static
+     * @memberOf module:Collections
+     * @method
+     * @see [async.groupBy]{@link module:Collections.groupBy}
+     * @category Collection
+     * @param {Array|Iterable|AsyncIterable|Object} coll - A collection to iterate over.
+     * @param {number} limit - The maximum number of async operations at a time.
+     * @param {AsyncFunction} iteratee - An async function to apply to each item in
+     * `coll`.
+     * The iteratee should complete with a `key` to group the value under.
+     * Invoked with (value, callback).
+     * @param {Function} [callback] - A callback which is called when all `iteratee`
+     * functions have finished, or an error occurs. Result is an `Object` whoses
+     * properties are arrays of values which returned the corresponding key.
+     * @returns {Promise} a promise, if no callback is passed
+     */
+    function groupByLimit(coll, limit, iteratee, callback) {
+        var _iteratee = wrapAsync(iteratee);
+        return mapLimit$1(coll, limit, (val, iterCb) => {
+            _iteratee(val, (err, key) => {
+                if (err) return iterCb(err);
+                return iterCb(err, {key, val});
+            });
+        }, (err, mapResults) => {
+            var result = {};
+            // from MDN, handle object having an `hasOwnProperty` prop
+            var {hasOwnProperty} = Object.prototype;
+
+            for (var i = 0; i < mapResults.length; i++) {
+                if (mapResults[i]) {
+                    var {key} = mapResults[i];
+                    var {val} = mapResults[i];
+
+                    if (hasOwnProperty.call(result, key)) {
+                        result[key].push(val);
+                    } else {
+                        result[key] = [val];
+                    }
+                }
+            }
+
+            return callback(err, result);
+        });
+    }
+
+    var groupByLimit$1 = awaitify(groupByLimit, 4);
+
+    /**
+     * Returns a new object, where each value corresponds to an array of items, from
+     * `coll`, that returned the corresponding key. That is, the keys of the object
+     * correspond to the values passed to the `iteratee` callback.
+     *
+     * Note: Since this function applies the `iteratee` to each item in parallel,
+     * there is no guarantee that the `iteratee` functions will complete in order.
+     * However, the values for each key in the `result` will be in the same order as
+     * the original `coll`. For Objects, the values will roughly be in the order of
+     * the original Objects' keys (but this can vary across JavaScript engines).
+     *
+     * @name groupBy
+     * @static
+     * @memberOf module:Collections
+     * @method
+     * @category Collection
+     * @param {Array|Iterable|AsyncIterable|Object} coll - A collection to iterate over.
+     * @param {AsyncFunction} iteratee - An async function to apply to each item in
+     * `coll`.
+     * The iteratee should complete with a `key` to group the value under.
+     * Invoked with (value, callback).
+     * @param {Function} [callback] - A callback which is called when all `iteratee`
+     * functions have finished, or an error occurs. Result is an `Object` whoses
+     * properties are arrays of values which returned the corresponding key.
+     * @returns {Promise} a promise, if no callback is passed
+     * @example
+     *
+     * // dir1 is a directory that contains file1.txt, file2.txt
+     * // dir2 is a directory that contains file3.txt, file4.txt
+     * // dir3 is a directory that contains file5.txt
+     * // dir4 does not exist
+     *
+     * const files = ['dir1/file1.txt','dir2','dir4']
+     *
+     * // asynchronous function that detects file type as none, file, or directory
+     * function detectFile(file, callback) {
+     *     fs.stat(file, function(err, stat) {
+     *         if (err) {
+     *             return callback(null, 'none');
+     *         }
+     *         callback(null, stat.isDirectory() ? 'directory' : 'file');
+     *     });
+     * }
+     *
+     * //Using callbacks
+     * async.groupBy(files, detectFile, function(err, result) {
+     *     if(err) {
+     *         console.log(err);
+     *     } else {
+     *	       console.log(result);
+     *         // {
+     *         //     file: [ 'dir1/file1.txt' ],
+     *         //     none: [ 'dir4' ],
+     *         //     directory: [ 'dir2']
+     *         // }
+     *         // result is object containing the files grouped by type
+     *     }
+     * });
+     *
+     * // Using Promises
+     * async.groupBy(files, detectFile)
+     * .then( result => {
+     *     console.log(result);
+     *     // {
+     *     //     file: [ 'dir1/file1.txt' ],
+     *     //     none: [ 'dir4' ],
+     *     //     directory: [ 'dir2']
+     *     // }
+     *     // result is object containing the files grouped by type
+     * }).catch( err => {
+     *     console.log(err);
+     * });
+     *
+     * // Using async/await
+     * async () => {
+     *     try {
+     *         let result = await async.groupBy(files, detectFile);
+     *         console.log(result);
+     *         // {
+     *         //     file: [ 'dir1/file1.txt' ],
+     *         //     none: [ 'dir4' ],
+     *         //     directory: [ 'dir2']
+     *         // }
+     *         // result is object containing the files grouped by type
+     *     }
+     *     catch (err) {
+     *         console.log(err);
+     *     }
+     * }
+     *
+     */
+    function groupBy (coll, iteratee, callback) {
+        return groupByLimit$1(coll, Infinity, iteratee, callback)
+    }
+
+    /**
+     * The same as [`groupBy`]{@link module:Collections.groupBy} but runs only a single async operation at a time.
+     *
+     * @name groupBySeries
+     * @static
+     * @memberOf module:Collections
+     * @method
+     * @see [async.groupBy]{@link module:Collections.groupBy}
+     * @category Collection
+     * @param {Array|Iterable|AsyncIterable|Object} coll - A collection to iterate over.
+     * @param {AsyncFunction} iteratee - An async function to apply to each item in
+     * `coll`.
+     * The iteratee should complete with a `key` to group the value under.
+     * Invoked with (value, callback).
+     * @param {Function} [callback] - A callback which is called when all `iteratee`
+     * functions have finished, or an error occurs. Result is an `Object` whose
+     * properties are arrays of values which returned the corresponding key.
+     * @returns {Promise} a promise, if no callback is passed
+     */
+    function groupBySeries (coll, iteratee, callback) {
+        return groupByLimit$1(coll, 1, iteratee, callback)
+    }
+
+    /**
+     * Logs the result of an `async` function to the `console`. Only works in
+     * Node.js or in browsers that support `console.log` and `console.error` (such
+     * as FF and Chrome). If multiple arguments are returned from the async
+     * function, `console.log` is called on each argument in order.
+     *
+     * @name log
+     * @static
+     * @memberOf module:Utils
+     * @method
+     * @category Util
+     * @param {AsyncFunction} function - The function you want to eventually apply
+     * all arguments to.
+     * @param {...*} arguments... - Any number of arguments to apply to the function.
+     * @example
+     *
+     * // in a module
+     * var hello = function(name, callback) {
+     *     setTimeout(function() {
+     *         callback(null, 'hello ' + name);
+     *     }, 1000);
+     * };
+     *
+     * // in the node repl
+     * node> async.log(hello, 'world');
+     * 'hello world'
+     */
+    var log = consoleFunc('log');
+
+    /**
+     * The same as [`mapValues`]{@link module:Collections.mapValues} but runs a maximum of `limit` async operations at a
+     * time.
+     *
+     * @name mapValuesLimit
+     * @static
+     * @memberOf module:Collections
+     * @method
+     * @see [async.mapValues]{@link module:Collections.mapValues}
+     * @category Collection
+     * @param {Object} obj - A collection to iterate over.
+     * @param {number} limit - The maximum number of async operations at a time.
+     * @param {AsyncFunction} iteratee - A function to apply to each value and key
+     * in `coll`.
+     * The iteratee should complete with the transformed value as its result.
+     * Invoked with (value, key, callback).
+     * @param {Function} [callback] - A callback which is called when all `iteratee`
+     * functions have finished, or an error occurs. `result` is a new object consisting
+     * of each key from `obj`, with each transformed value on the right-hand side.
+     * Invoked with (err, result).
+     * @returns {Promise} a promise, if no callback is passed
+     */
+    function mapValuesLimit(obj, limit, iteratee, callback) {
+        callback = once(callback);
+        var newObj = {};
+        var _iteratee = wrapAsync(iteratee);
+        return eachOfLimit(limit)(obj, (val, key, next) => {
+            _iteratee(val, key, (err, result) => {
+                if (err) return next(err);
+                newObj[key] = result;
+                next(err);
+            });
+        }, err => callback(err, newObj));
+    }
+
+    var mapValuesLimit$1 = awaitify(mapValuesLimit, 4);
+
+    /**
+     * A relative of [`map`]{@link module:Collections.map}, designed for use with objects.
+     *
+     * Produces a new Object by mapping each value of `obj` through the `iteratee`
+     * function. The `iteratee` is called each `value` and `key` from `obj` and a
+     * callback for when it has finished processing. Each of these callbacks takes
+     * two arguments: an `error`, and the transformed item from `obj`. If `iteratee`
+     * passes an error to its callback, the main `callback` (for the `mapValues`
+     * function) is immediately called with the error.
+     *
+     * Note, the order of the keys in the result is not guaranteed.  The keys will
+     * be roughly in the order they complete, (but this is very engine-specific)
+     *
+     * @name mapValues
+     * @static
+     * @memberOf module:Collections
+     * @method
+     * @category Collection
+     * @param {Object} obj - A collection to iterate over.
+     * @param {AsyncFunction} iteratee - A function to apply to each value and key
+     * in `coll`.
+     * The iteratee should complete with the transformed value as its result.
+     * Invoked with (value, key, callback).
+     * @param {Function} [callback] - A callback which is called when all `iteratee`
+     * functions have finished, or an error occurs. `result` is a new object consisting
+     * of each key from `obj`, with each transformed value on the right-hand side.
+     * Invoked with (err, result).
+     * @returns {Promise} a promise, if no callback is passed
+     * @example
+     *
+     * // file1.txt is a file that is 1000 bytes in size
+     * // file2.txt is a file that is 2000 bytes in size
+     * // file3.txt is a file that is 3000 bytes in size
+     * // file4.txt does not exist
+     *
+     * const fileMap = {
+     *     f1: 'file1.txt',
+     *     f2: 'file2.txt',
+     *     f3: 'file3.txt'
+     * };
+     *
+     * const withMissingFileMap = {
+     *     f1: 'file1.txt',
+     *     f2: 'file2.txt',
+     *     f3: 'file4.txt'
+     * };
+     *
+     * // asynchronous function that returns the file size in bytes
+     * function getFileSizeInBytes(file, key, callback) {
+     *     fs.stat(file, function(err, stat) {
+     *         if (err) {
+     *             return callback(err);
+     *         }
+     *         callback(null, stat.size);
+     *     });
+     * }
+     *
+     * // Using callbacks
+     * async.mapValues(fileMap, getFileSizeInBytes, function(err, result) {
+     *     if (err) {
+     *         console.log(err);
+     *     } else {
+     *         console.log(result);
+     *         // result is now a map of file size in bytes for each file, e.g.
+     *         // {
+     *         //     f1: 1000,
+     *         //     f2: 2000,
+     *         //     f3: 3000
+     *         // }
+     *     }
+     * });
+     *
+     * // Error handling
+     * async.mapValues(withMissingFileMap, getFileSizeInBytes, function(err, result) {
+     *     if (err) {
+     *         console.log(err);
+     *         // [ Error: ENOENT: no such file or directory ]
+     *     } else {
+     *         console.log(result);
+     *     }
+     * });
+     *
+     * // Using Promises
+     * async.mapValues(fileMap, getFileSizeInBytes)
+     * .then( result => {
+     *     console.log(result);
+     *     // result is now a map of file size in bytes for each file, e.g.
+     *     // {
+     *     //     f1: 1000,
+     *     //     f2: 2000,
+     *     //     f3: 3000
+     *     // }
+     * }).catch (err => {
+     *     console.log(err);
+     * });
+     *
+     * // Error Handling
+     * async.mapValues(withMissingFileMap, getFileSizeInBytes)
+     * .then( result => {
+     *     console.log(result);
+     * }).catch (err => {
+     *     console.log(err);
+     *     // [ Error: ENOENT: no such file or directory ]
+     * });
+     *
+     * // Using async/await
+     * async () => {
+     *     try {
+     *         let result = await async.mapValues(fileMap, getFileSizeInBytes);
+     *         console.log(result);
+     *         // result is now a map of file size in bytes for each file, e.g.
+     *         // {
+     *         //     f1: 1000,
+     *         //     f2: 2000,
+     *         //     f3: 3000
+     *         // }
+     *     }
+     *     catch (err) {
+     *         console.log(err);
+     *     }
+     * }
+     *
+     * // Error Handling
+     * async () => {
+     *     try {
+     *         let result = await async.mapValues(withMissingFileMap, getFileSizeInBytes);
+     *         console.log(result);
+     *     }
+     *     catch (err) {
+     *         console.log(err);
+     *         // [ Error: ENOENT: no such file or directory ]
+     *     }
+     * }
+     *
+     */
+    function mapValues(obj, iteratee, callback) {
+        return mapValuesLimit$1(obj, Infinity, iteratee, callback)
+    }
+
+    /**
+     * The same as [`mapValues`]{@link module:Collections.mapValues} but runs only a single async operation at a time.
+     *
+     * @name mapValuesSeries
+     * @static
+     * @memberOf module:Collections
+     * @method
+     * @see [async.mapValues]{@link module:Collections.mapValues}
+     * @category Collection
+     * @param {Object} obj - A collection to iterate over.
+     * @param {AsyncFunction} iteratee - A function to apply to each value and key
+     * in `coll`.
+     * The iteratee should complete with the transformed value as its result.
+     * Invoked with (value, key, callback).
+     * @param {Function} [callback] - A callback which is called when all `iteratee`
+     * functions have finished, or an error occurs. `result` is a new object consisting
+     * of each key from `obj`, with each transformed value on the right-hand side.
+     * Invoked with (err, result).
+     * @returns {Promise} a promise, if no callback is passed
+     */
+    function mapValuesSeries(obj, iteratee, callback) {
+        return mapValuesLimit$1(obj, 1, iteratee, callback)
+    }
+
+    /**
+     * Caches the results of an async function. When creating a hash to store
+     * function results against, the callback is omitted from the hash and an
+     * optional hash function can be used.
+     *
+     * **Note: if the async function errs, the result will not be cached and
+     * subsequent calls will call the wrapped function.**
+     *
+     * If no hash function is specified, the first argument is used as a hash key,
+     * which may work reasonably if it is a string or a data type that converts to a
+     * distinct string. Note that objects and arrays will not behave reasonably.
+     * Neither will cases where the other arguments are significant. In such cases,
+     * specify your own hash function.
+     *
+     * The cache of results is exposed as the `memo` property of the function
+     * returned by `memoize`.
+     *
+     * @name memoize
+     * @static
+     * @memberOf module:Utils
+     * @method
+     * @category Util
+     * @param {AsyncFunction} fn - The async function to proxy and cache results from.
+     * @param {Function} hasher - An optional function for generating a custom hash
+     * for storing results. It has all the arguments applied to it apart from the
+     * callback, and must be synchronous.
+     * @returns {AsyncFunction} a memoized version of `fn`
+     * @example
+     *
+     * var slow_fn = function(name, callback) {
+     *     // do something
+     *     callback(null, result);
+     * };
+     * var fn = async.memoize(slow_fn);
+     *
+     * // fn can now be used as if it were slow_fn
+     * fn('some name', function() {
+     *     // callback
+     * });
+     */
+    function memoize(fn, hasher = v => v) {
+        var memo = Object.create(null);
+        var queues = Object.create(null);
+        var _fn = wrapAsync(fn);
+        var memoized = initialParams((args, callback) => {
+            var key = hasher(...args);
+            if (key in memo) {
+                setImmediate$1(() => callback(null, ...memo[key]));
+            } else if (key in queues) {
+                queues[key].push(callback);
+            } else {
+                queues[key] = [callback];
+                _fn(...args, (err, ...resultArgs) => {
+                    // #1465 don't memoize if an error occurred
+                    if (!err) {
+                        memo[key] = resultArgs;
+                    }
+                    var q = queues[key];
+                    delete queues[key];
+                    for (var i = 0, l = q.length; i < l; i++) {
+                        q[i](err, ...resultArgs);
+                    }
                 });
             }
         });
-    }
-    else if (entity instanceof Buffer) {
-
-        // the entity is a buffer containing a file
-
-        // the _callback argument is now the name of the file in buffer
-        // the callback is shifted to _shiftedCallback argument
-        var name = _callback;
-        var callback = _shiftedCallback || function () { };
-
-        zipped_obj.file(name, entity);
-
-        // invoke the callback
-        callback(null, new ZipExport(zipped_obj, false, true));
+        memoized.memo = memo;
+        memoized.unmemoized = fn;
+        return memoized;
     }
 
-    else if (entity instanceof ZippedFS) {
+    /* istanbul ignore file */
 
-        // the entity is a ZippedFS from an unzipped file
-        var callback = _callback || function () { };
+    /**
+     * Calls `callback` on a later loop around the event loop. In Node.js this just
+     * calls `process.nextTick`.  In the browser it will use `setImmediate` if
+     * available, otherwise `setTimeout(callback, 0)`, which means other higher
+     * priority events may precede the execution of `callback`.
+     *
+     * This is used internally for browser-compatibility purposes.
+     *
+     * @name nextTick
+     * @static
+     * @memberOf module:Utils
+     * @method
+     * @see [async.setImmediate]{@link module:Utils.setImmediate}
+     * @category Util
+     * @param {Function} callback - The function to call on a later loop around
+     * the event loop. Invoked with (args...).
+     * @param {...*} args... - any number of additional arguments to pass to the
+     * callback on the next tick.
+     * @example
+     *
+     * var call_order = [];
+     * async.nextTick(function() {
+     *     call_order.push('two');
+     *     // call_order now equals ['one','two']
+     * });
+     * call_order.push('one');
+     *
+     * async.setImmediate(function (a, b, c) {
+     *     // a, b, and c equal 1, 2, and 3
+     * }, 1, 2, 3);
+     */
+    var _defer$1;
 
-        //invoke the callback
-        callback(null, new ZipExport(entity.unzipped_file, false, true));
+    if (hasNextTick) {
+        _defer$1 = process.nextTick;
+    } else if (hasSetImmediate) {
+        _defer$1 = setImmediate;
+    } else {
+        _defer$1 = fallback;
     }
-    else {
-        callback(new Error("Unsupported type: data is neither a path or a Buffer"));
+
+    var nextTick = wrap(_defer$1);
+
+    var _parallel = awaitify((eachfn, tasks, callback) => {
+        var results = isArrayLike(tasks) ? [] : {};
+
+        eachfn(tasks, (task, key, taskCb) => {
+            wrapAsync(task)((err, ...result) => {
+                if (result.length < 2) {
+                    [result] = result;
+                }
+                results[key] = result;
+                taskCb(err);
+            });
+        }, err => callback(err, results));
+    }, 3);
+
+    /**
+     * Run the `tasks` collection of functions in parallel, without waiting until
+     * the previous function has completed. If any of the functions pass an error to
+     * its callback, the main `callback` is immediately called with the value of the
+     * error. Once the `tasks` have completed, the results are passed to the final
+     * `callback` as an array.
+     *
+     * **Note:** `parallel` is about kicking-off I/O tasks in parallel, not about
+     * parallel execution of code.  If your tasks do not use any timers or perform
+     * any I/O, they will actually be executed in series.  Any synchronous setup
+     * sections for each task will happen one after the other.  JavaScript remains
+     * single-threaded.
+     *
+     * **Hint:** Use [`reflect`]{@link module:Utils.reflect} to continue the
+     * execution of other tasks when a task fails.
+     *
+     * It is also possible to use an object instead of an array. Each property will
+     * be run as a function and the results will be passed to the final `callback`
+     * as an object instead of an array. This can be a more readable way of handling
+     * results from {@link async.parallel}.
+     *
+     * @name parallel
+     * @static
+     * @memberOf module:ControlFlow
+     * @method
+     * @category Control Flow
+     * @param {Array|Iterable|AsyncIterable|Object} tasks - A collection of
+     * [async functions]{@link AsyncFunction} to run.
+     * Each async function can complete with any number of optional `result` values.
+     * @param {Function} [callback] - An optional callback to run once all the
+     * functions have completed successfully. This function gets a results array
+     * (or object) containing all the result arguments passed to the task callbacks.
+     * Invoked with (err, results).
+     * @returns {Promise} a promise, if a callback is not passed
+     *
+     * @example
+     *
+     * //Using Callbacks
+     * async.parallel([
+     *     function(callback) {
+     *         setTimeout(function() {
+     *             callback(null, 'one');
+     *         }, 200);
+     *     },
+     *     function(callback) {
+     *         setTimeout(function() {
+     *             callback(null, 'two');
+     *         }, 100);
+     *     }
+     * ], function(err, results) {
+     *     console.log(results);
+     *     // results is equal to ['one','two'] even though
+     *     // the second function had a shorter timeout.
+     * });
+     *
+     * // an example using an object instead of an array
+     * async.parallel({
+     *     one: function(callback) {
+     *         setTimeout(function() {
+     *             callback(null, 1);
+     *         }, 200);
+     *     },
+     *     two: function(callback) {
+     *         setTimeout(function() {
+     *             callback(null, 2);
+     *         }, 100);
+     *     }
+     * }, function(err, results) {
+     *     console.log(results);
+     *     // results is equal to: { one: 1, two: 2 }
+     * });
+     *
+     * //Using Promises
+     * async.parallel([
+     *     function(callback) {
+     *         setTimeout(function() {
+     *             callback(null, 'one');
+     *         }, 200);
+     *     },
+     *     function(callback) {
+     *         setTimeout(function() {
+     *             callback(null, 'two');
+     *         }, 100);
+     *     }
+     * ]).then(results => {
+     *     console.log(results);
+     *     // results is equal to ['one','two'] even though
+     *     // the second function had a shorter timeout.
+     * }).catch(err => {
+     *     console.log(err);
+     * });
+     *
+     * // an example using an object instead of an array
+     * async.parallel({
+     *     one: function(callback) {
+     *         setTimeout(function() {
+     *             callback(null, 1);
+     *         }, 200);
+     *     },
+     *     two: function(callback) {
+     *         setTimeout(function() {
+     *             callback(null, 2);
+     *         }, 100);
+     *     }
+     * }).then(results => {
+     *     console.log(results);
+     *     // results is equal to: { one: 1, two: 2 }
+     * }).catch(err => {
+     *     console.log(err);
+     * });
+     *
+     * //Using async/await
+     * async () => {
+     *     try {
+     *         let results = await async.parallel([
+     *             function(callback) {
+     *                 setTimeout(function() {
+     *                     callback(null, 'one');
+     *                 }, 200);
+     *             },
+     *             function(callback) {
+     *                 setTimeout(function() {
+     *                     callback(null, 'two');
+     *                 }, 100);
+     *             }
+     *         ]);
+     *         console.log(results);
+     *         // results is equal to ['one','two'] even though
+     *         // the second function had a shorter timeout.
+     *     }
+     *     catch (err) {
+     *         console.log(err);
+     *     }
+     * }
+     *
+     * // an example using an object instead of an array
+     * async () => {
+     *     try {
+     *         let results = await async.parallel({
+     *             one: function(callback) {
+     *                 setTimeout(function() {
+     *                     callback(null, 1);
+     *                 }, 200);
+     *             },
+     *            two: function(callback) {
+     *                 setTimeout(function() {
+     *                     callback(null, 2);
+     *                 }, 100);
+     *            }
+     *         });
+     *         console.log(results);
+     *         // results is equal to: { one: 1, two: 2 }
+     *     }
+     *     catch (err) {
+     *         console.log(err);
+     *     }
+     * }
+     *
+     */
+    function parallel(tasks, callback) {
+        return _parallel(eachOf$1, tasks, callback);
     }
-}
 
-/*
- * unzips a given zip file asynchronously
- * @param file {String || Buffer}: the path to the zip file or the buffer containing it
- * @param _callback {Function}: the function to be called when the unzipping is done
- */
-ZipLocal.unzip = function (file, _callback) {
+    /**
+     * The same as [`parallel`]{@link module:ControlFlow.parallel} but runs a maximum of `limit` async operations at a
+     * time.
+     *
+     * @name parallelLimit
+     * @static
+     * @memberOf module:ControlFlow
+     * @method
+     * @see [async.parallel]{@link module:ControlFlow.parallel}
+     * @category Control Flow
+     * @param {Array|Iterable|AsyncIterable|Object} tasks - A collection of
+     * [async functions]{@link AsyncFunction} to run.
+     * Each async function can complete with any number of optional `result` values.
+     * @param {number} limit - The maximum number of async operations at a time.
+     * @param {Function} [callback] - An optional callback to run once all the
+     * functions have completed successfully. This function gets a results array
+     * (or object) containing all the result arguments passed to the task callbacks.
+     * Invoked with (err, results).
+     * @returns {Promise} a promise, if a callback is not passed
+     */
+    function parallelLimit(tasks, limit, callback) {
+        return _parallel(eachOfLimit(limit), tasks, callback);
+    }
 
-    var callback = _callback || function () { };
-    var zipped_obj = JSZip.make();
+    /**
+     * A queue of tasks for the worker function to complete.
+     * @typedef {Iterable} QueueObject
+     * @memberOf module:ControlFlow
+     * @property {Function} length - a function returning the number of items
+     * waiting to be processed. Invoke with `queue.length()`.
+     * @property {boolean} started - a boolean indicating whether or not any
+     * items have been pushed and processed by the queue.
+     * @property {Function} running - a function returning the number of items
+     * currently being processed. Invoke with `queue.running()`.
+     * @property {Function} workersList - a function returning the array of items
+     * currently being processed. Invoke with `queue.workersList()`.
+     * @property {Function} idle - a function returning false if there are items
+     * waiting or being processed, or true if not. Invoke with `queue.idle()`.
+     * @property {number} concurrency - an integer for determining how many `worker`
+     * functions should be run in parallel. This property can be changed after a
+     * `queue` is created to alter the concurrency on-the-fly.
+     * @property {number} payload - an integer that specifies how many items are
+     * passed to the worker function at a time. only applies if this is a
+     * [cargo]{@link module:ControlFlow.cargo} object
+     * @property {AsyncFunction} push - add a new task to the `queue`. Calls `callback`
+     * once the `worker` has finished processing the task. Instead of a single task,
+     * a `tasks` array can be submitted. The respective callback is used for every
+     * task in the list. Invoke with `queue.push(task, [callback])`,
+     * @property {AsyncFunction} unshift - add a new task to the front of the `queue`.
+     * Invoke with `queue.unshift(task, [callback])`.
+     * @property {AsyncFunction} pushAsync - the same as `q.push`, except this returns
+     * a promise that rejects if an error occurs.
+     * @property {AsyncFunction} unshiftAsync - the same as `q.unshift`, except this returns
+     * a promise that rejects if an error occurs.
+     * @property {Function} remove - remove items from the queue that match a test
+     * function.  The test function will be passed an object with a `data` property,
+     * and a `priority` property, if this is a
+     * [priorityQueue]{@link module:ControlFlow.priorityQueue} object.
+     * Invoked with `queue.remove(testFn)`, where `testFn` is of the form
+     * `function ({data, priority}) {}` and returns a Boolean.
+     * @property {Function} saturated - a function that sets a callback that is
+     * called when the number of running workers hits the `concurrency` limit, and
+     * further tasks will be queued.  If the callback is omitted, `q.saturated()`
+     * returns a promise for the next occurrence.
+     * @property {Function} unsaturated - a function that sets a callback that is
+     * called when the number of running workers is less than the `concurrency` &
+     * `buffer` limits, and further tasks will not be queued. If the callback is
+     * omitted, `q.unsaturated()` returns a promise for the next occurrence.
+     * @property {number} buffer - A minimum threshold buffer in order to say that
+     * the `queue` is `unsaturated`.
+     * @property {Function} empty - a function that sets a callback that is called
+     * when the last item from the `queue` is given to a `worker`. If the callback
+     * is omitted, `q.empty()` returns a promise for the next occurrence.
+     * @property {Function} drain - a function that sets a callback that is called
+     * when the last item from the `queue` has returned from the `worker`. If the
+     * callback is omitted, `q.drain()` returns a promise for the next occurrence.
+     * @property {Function} error - a function that sets a callback that is called
+     * when a task errors. Has the signature `function(error, task)`. If the
+     * callback is omitted, `error()` returns a promise that rejects on the next
+     * error.
+     * @property {boolean} paused - a boolean for determining whether the queue is
+     * in a paused state.
+     * @property {Function} pause - a function that pauses the processing of tasks
+     * until `resume()` is called. Invoke with `queue.pause()`.
+     * @property {Function} resume - a function that resumes the processing of
+     * queued tasks when the queue is paused. Invoke with `queue.resume()`.
+     * @property {Function} kill - a function that removes the `drain` callback and
+     * empties remaining tasks from the queue forcing it to go idle. No more tasks
+     * should be pushed to the queue after calling this function. Invoke with `queue.kill()`.
+     *
+     * @example
+     * const q = async.queue(worker, 2)
+     * q.push(item1)
+     * q.push(item2)
+     * q.push(item3)
+     * // queues are iterable, spread into an array to inspect
+     * const items = [...q] // [item1, item2, item3]
+     * // or use for of
+     * for (let item of q) {
+     *     console.log(item)
+     * }
+     *
+     * q.drain(() => {
+     *     console.log('all done')
+     * })
+     * // or
+     * await q.drain()
+     */
 
-    if (typeof file === "string") {
+    /**
+     * Creates a `queue` object with the specified `concurrency`. Tasks added to the
+     * `queue` are processed in parallel (up to the `concurrency` limit). If all
+     * `worker`s are in progress, the task is queued until one becomes available.
+     * Once a `worker` completes a `task`, that `task`'s callback is called.
+     *
+     * @name queue
+     * @static
+     * @memberOf module:ControlFlow
+     * @method
+     * @category Control Flow
+     * @param {AsyncFunction} worker - An async function for processing a queued task.
+     * If you want to handle errors from an individual task, pass a callback to
+     * `q.push()`. Invoked with (task, callback).
+     * @param {number} [concurrency=1] - An `integer` for determining how many
+     * `worker` functions should be run in parallel.  If omitted, the concurrency
+     * defaults to `1`.  If the concurrency is `0`, an error is thrown.
+     * @returns {module:ControlFlow.QueueObject} A queue object to manage the tasks. Callbacks can be
+     * attached as certain properties to listen for specific events during the
+     * lifecycle of the queue.
+     * @example
+     *
+     * // create a queue object with concurrency 2
+     * var q = async.queue(function(task, callback) {
+     *     console.log('hello ' + task.name);
+     *     callback();
+     * }, 2);
+     *
+     * // assign a callback
+     * q.drain(function() {
+     *     console.log('all items have been processed');
+     * });
+     * // or await the end
+     * await q.drain()
+     *
+     * // assign an error callback
+     * q.error(function(err, task) {
+     *     console.error('task experienced an error');
+     * });
+     *
+     * // add some items to the queue
+     * q.push({name: 'foo'}, function(err) {
+     *     console.log('finished processing foo');
+     * });
+     * // callback is optional
+     * q.push({name: 'bar'});
+     *
+     * // add some items to the queue (batch-wise)
+     * q.push([{name: 'baz'},{name: 'bay'},{name: 'bax'}], function(err) {
+     *     console.log('finished processing item');
+     * });
+     *
+     * // add some items to the front of the queue
+     * q.unshift({name: 'bar'}, function (err) {
+     *     console.log('finished processing bar');
+     * });
+     */
+    function queue$1 (worker, concurrency) {
+        var _worker = wrapAsync(worker);
+        return queue((items, cb) => {
+            _worker(items[0], cb);
+        }, concurrency, 1);
+    }
 
-        // file is a path that points to a zip file
+    // Binary min-heap implementation used for priority queue.
+    // Implementation is stable, i.e. push time is considered for equal priorities
+    class Heap {
+        constructor() {
+            this.heap = [];
+            this.pushCount = Number.MIN_SAFE_INTEGER;
+        }
 
-        var normalized_path = path.normalize(file);
+        get length() {
+            return this.heap.length;
+        }
 
-        fs.readFile(normalized_path, function (err, data) {
+        empty () {
+            this.heap = [];
+            return this;
+        }
 
-            if(err) {
-                callback(err);
-                return;
+        percUp(index) {
+            let p;
+
+            while (index > 0 && smaller(this.heap[index], this.heap[p=parent(index)])) {
+                let t = this.heap[index];
+                this.heap[index] = this.heap[p];
+                this.heap[p] = t;
+
+                index = p;
+            }
+        }
+
+        percDown(index) {
+            let l;
+
+            while ((l=leftChi(index)) < this.heap.length) {
+                if (l+1 < this.heap.length && smaller(this.heap[l+1], this.heap[l])) {
+                    l = l+1;
+                }
+
+                if (smaller(this.heap[index], this.heap[l])) {
+                    break;
+                }
+
+                let t = this.heap[index];
+                this.heap[index] = this.heap[l];
+                this.heap[l] = t;
+
+                index = l;
+            }
+        }
+
+        push(node) {
+            node.pushCount = ++this.pushCount;
+            this.heap.push(node);
+            this.percUp(this.heap.length-1);
+        }
+
+        unshift(node) {
+            return this.heap.push(node);
+        }
+
+        shift() {
+            let [top] = this.heap;
+
+            this.heap[0] = this.heap[this.heap.length-1];
+            this.heap.pop();
+            this.percDown(0);
+
+            return top;
+        }
+
+        toArray() {
+            return [...this];
+        }
+
+        *[Symbol.iterator] () {
+            for (let i = 0; i < this.heap.length; i++) {
+                yield this.heap[i].data;
+            }
+        }
+
+        remove (testFn) {
+            let j = 0;
+            for (let i = 0; i < this.heap.length; i++) {
+                if (!testFn(this.heap[i])) {
+                    this.heap[j] = this.heap[i];
+                    j++;
+                }
             }
 
-            zipped_obj.load(data);
+            this.heap.splice(j);
 
-            //invoke the callback
-            callback(null, new ZipExport(zipped_obj, true, true))
+            for (let i = parent(this.heap.length-1); i >= 0; i--) {
+                this.percDown(i);
+            }
 
-        });
-    }
-    else if (file instanceof Buffer) {
-
-        // file is a Buffer that contains the data
-
-        zipped_obj.load(file);
-
-        //invoke the callback
-        callback(null, new ZipExport(zipped_obj, true, true))
-    }
-    else {
-        callback(new Error("Unsupported type: data is neither a path or a Buffer"));
+            return this;
+        }
     }
 
-}
+    function leftChi(i) {
+        return (i<<1)+1;
+    }
 
-/*
- * zips a given file/directory synchronously
- * @param entity {String || Buffer || ZippedFS}: the path to the file/directory to zip, a buffer containing a file or a ZippedFS object of an unzipped file
- * @param buffer_name {String}: the name of the file if entity is buffer (optional)
- * @return {ZipExport}: the ZipExport object that contains exporting interfaces
- */
-ZipLocal.sync.zip = function(entity, buffer_name) {
+    function parent(i) {
+        return ((i+1)>>1)-1;
+    }
 
-    var zipped_obj = JSZip.make();
-
-    if (typeof entity === "string") {
-
-        // the entity is a path pointing to a file or a directory
-
-        var normalized_path = path.normalize(entity);
-        var stats = fs.statSync(normalized_path);
-
-        if (stats.isDirectory()) {
-
-            // start zipping the directory
-            zip_dir_sync(normalized_path, zipped_obj);
-
-            return new ZipExport(zipped_obj);
+    function smaller(x, y) {
+        if (x.priority !== y.priority) {
+            return x.priority < y.priority;
         }
         else {
-
-            var parsed_path = path.parse(normalized_path);
-            var file = fs.readFileSync(normalized_path);
-
-            zipped_obj.file(parsed_path.base, file);
-
+            return x.pushCount < y.pushCount;
         }
     }
-    else if (entity instanceof Buffer) {
 
-        // the entity is a buffer containing a file
+    /**
+     * The same as [async.queue]{@link module:ControlFlow.queue} only tasks are assigned a priority and
+     * completed in ascending priority order.
+     *
+     * @name priorityQueue
+     * @static
+     * @memberOf module:ControlFlow
+     * @method
+     * @see [async.queue]{@link module:ControlFlow.queue}
+     * @category Control Flow
+     * @param {AsyncFunction} worker - An async function for processing a queued task.
+     * If you want to handle errors from an individual task, pass a callback to
+     * `q.push()`.
+     * Invoked with (task, callback).
+     * @param {number} concurrency - An `integer` for determining how many `worker`
+     * functions should be run in parallel.  If omitted, the concurrency defaults to
+     * `1`.  If the concurrency is `0`, an error is thrown.
+     * @returns {module:ControlFlow.QueueObject} A priorityQueue object to manage the tasks. There are two
+     * differences between `queue` and `priorityQueue` objects:
+     * * `push(task, priority, [callback])` - `priority` should be a number. If an
+     *   array of `tasks` is given, all tasks will be assigned the same priority.
+     * * The `unshift` method was removed.
+     */
+    function priorityQueue(worker, concurrency) {
+        // Start with a normal queue
+        var q = queue$1(worker, concurrency);
+        var processingScheduled = false;
 
-        zipped_obj.file(buffer_name, entity);
+        q._tasks = new Heap();
+
+        // Override push to accept second parameter representing priority
+        q.push = function(data, priority = 0, callback = () => {}) {
+            if (typeof callback !== 'function') {
+                throw new Error('task callback must be a function');
+            }
+            q.started = true;
+            if (!Array.isArray(data)) {
+                data = [data];
+            }
+            if (data.length === 0 && q.idle()) {
+                // call drain immediately if there are no tasks
+                return setImmediate$1(() => q.drain());
+            }
+
+            for (var i = 0, l = data.length; i < l; i++) {
+                var item = {
+                    data: data[i],
+                    priority,
+                    callback
+                };
+
+                q._tasks.push(item);
+            }
+
+            if (!processingScheduled) {
+                processingScheduled = true;
+                setImmediate$1(() => {
+                    processingScheduled = false;
+                    q.process();
+                });
+            }
+        };
+
+        // Remove unshift function
+        delete q.unshift;
+
+        return q;
     }
-    else if (entity instanceof ZippedFS) {
 
-        // the entity is a ZippedFS from an unzipped file
-
-        //change the zipped_obj
-        zipped_obj = entity.unzipped_file;
+    /**
+     * Runs the `tasks` array of functions in parallel, without waiting until the
+     * previous function has completed. Once any of the `tasks` complete or pass an
+     * error to its callback, the main `callback` is immediately called. It's
+     * equivalent to `Promise.race()`.
+     *
+     * @name race
+     * @static
+     * @memberOf module:ControlFlow
+     * @method
+     * @category Control Flow
+     * @param {Array} tasks - An array containing [async functions]{@link AsyncFunction}
+     * to run. Each function can complete with an optional `result` value.
+     * @param {Function} callback - A callback to run once any of the functions have
+     * completed. This function gets an error or result from the first function that
+     * completed. Invoked with (err, result).
+     * @returns undefined
+     * @example
+     *
+     * async.race([
+     *     function(callback) {
+     *         setTimeout(function() {
+     *             callback(null, 'one');
+     *         }, 200);
+     *     },
+     *     function(callback) {
+     *         setTimeout(function() {
+     *             callback(null, 'two');
+     *         }, 100);
+     *     }
+     * ],
+     * // main callback
+     * function(err, result) {
+     *     // the result will be equal to 'two' as it finishes earlier
+     * });
+     */
+    function race(tasks, callback) {
+        callback = once(callback);
+        if (!Array.isArray(tasks)) return callback(new TypeError('First argument to race must be an array of functions'));
+        if (!tasks.length) return callback();
+        for (var i = 0, l = tasks.length; i < l; i++) {
+            wrapAsync(tasks[i])(callback);
+        }
     }
-    else {
-        throw new Error("Unsupported type: data is neither a path or a Buffer");
+
+    var race$1 = awaitify(race, 2);
+
+    /**
+     * Same as [`reduce`]{@link module:Collections.reduce}, only operates on `array` in reverse order.
+     *
+     * @name reduceRight
+     * @static
+     * @memberOf module:Collections
+     * @method
+     * @see [async.reduce]{@link module:Collections.reduce}
+     * @alias foldr
+     * @category Collection
+     * @param {Array} array - A collection to iterate over.
+     * @param {*} memo - The initial state of the reduction.
+     * @param {AsyncFunction} iteratee - A function applied to each item in the
+     * array to produce the next step in the reduction.
+     * The `iteratee` should complete with the next state of the reduction.
+     * If the iteratee completes with an error, the reduction is stopped and the
+     * main `callback` is immediately called with the error.
+     * Invoked with (memo, item, callback).
+     * @param {Function} [callback] - A callback which is called after all the
+     * `iteratee` functions have finished. Result is the reduced value. Invoked with
+     * (err, result).
+     * @returns {Promise} a promise, if no callback is passed
+     */
+    function reduceRight (array, memo, iteratee, callback) {
+        var reversed = [...array].reverse();
+        return reduce$1(reversed, memo, iteratee, callback);
     }
 
-    return new ZipExport(zipped_obj);
-}
+    /**
+     * Wraps the async function in another function that always completes with a
+     * result object, even when it errors.
+     *
+     * The result object has either the property `error` or `value`.
+     *
+     * @name reflect
+     * @static
+     * @memberOf module:Utils
+     * @method
+     * @category Util
+     * @param {AsyncFunction} fn - The async function you want to wrap
+     * @returns {Function} - A function that always passes null to it's callback as
+     * the error. The second argument to the callback will be an `object` with
+     * either an `error` or a `value` property.
+     * @example
+     *
+     * async.parallel([
+     *     async.reflect(function(callback) {
+     *         // do some stuff ...
+     *         callback(null, 'one');
+     *     }),
+     *     async.reflect(function(callback) {
+     *         // do some more stuff but error ...
+     *         callback('bad stuff happened');
+     *     }),
+     *     async.reflect(function(callback) {
+     *         // do some more stuff ...
+     *         callback(null, 'two');
+     *     })
+     * ],
+     * // optional callback
+     * function(err, results) {
+     *     // values
+     *     // results[0].value = 'one'
+     *     // results[1].error = 'bad stuff happened'
+     *     // results[2].value = 'two'
+     * });
+     */
+    function reflect(fn) {
+        var _fn = wrapAsync(fn);
+        return initialParams(function reflectOn(args, reflectCallback) {
+            args.push((error, ...cbArgs) => {
+                let retVal = {};
+                if (error) {
+                    retVal.error = error;
+                }
+                if (cbArgs.length > 0){
+                    var value = cbArgs;
+                    if (cbArgs.length <= 1) {
+                        [value] = cbArgs;
+                    }
+                    retVal.value = value;
+                }
+                reflectCallback(null, retVal);
+            });
 
-/*
- * unzips a given zip file synchrnously
- * @param file {String || Buffer}: the path to the zip file or the buffer containing it
- * @return {ZipExport}: the ZipExport object that contains exporting interfaces
- */
-ZipLocal.sync.unzip = function (file) {
-
-    var zipped_obj = JSZip.make();
-
-    if (typeof file === "string") {
-
-        // file is a path that points to a zip file
-
-        var normalized_path = path.normalize(file);
-
-        var data = fs.readFileSync(normalized_path);
-
-        zipped_obj.load(data);
+            return _fn.apply(this, args);
+        });
     }
-    else if (file instanceof Buffer) {
 
-        // file is a Buffer that contains the data
-
-        zipped_obj.load(file);
+    /**
+     * A helper function that wraps an array or an object of functions with `reflect`.
+     *
+     * @name reflectAll
+     * @static
+     * @memberOf module:Utils
+     * @method
+     * @see [async.reflect]{@link module:Utils.reflect}
+     * @category Util
+     * @param {Array|Object|Iterable} tasks - The collection of
+     * [async functions]{@link AsyncFunction} to wrap in `async.reflect`.
+     * @returns {Array} Returns an array of async functions, each wrapped in
+     * `async.reflect`
+     * @example
+     *
+     * let tasks = [
+     *     function(callback) {
+     *         setTimeout(function() {
+     *             callback(null, 'one');
+     *         }, 200);
+     *     },
+     *     function(callback) {
+     *         // do some more stuff but error ...
+     *         callback(new Error('bad stuff happened'));
+     *     },
+     *     function(callback) {
+     *         setTimeout(function() {
+     *             callback(null, 'two');
+     *         }, 100);
+     *     }
+     * ];
+     *
+     * async.parallel(async.reflectAll(tasks),
+     * // optional callback
+     * function(err, results) {
+     *     // values
+     *     // results[0].value = 'one'
+     *     // results[1].error = Error('bad stuff happened')
+     *     // results[2].value = 'two'
+     * });
+     *
+     * // an example using an object instead of an array
+     * let tasks = {
+     *     one: function(callback) {
+     *         setTimeout(function() {
+     *             callback(null, 'one');
+     *         }, 200);
+     *     },
+     *     two: function(callback) {
+     *         callback('two');
+     *     },
+     *     three: function(callback) {
+     *         setTimeout(function() {
+     *             callback(null, 'three');
+     *         }, 100);
+     *     }
+     * };
+     *
+     * async.parallel(async.reflectAll(tasks),
+     * // optional callback
+     * function(err, results) {
+     *     // values
+     *     // results.one.value = 'one'
+     *     // results.two.error = 'two'
+     *     // results.three.value = 'three'
+     * });
+     */
+    function reflectAll(tasks) {
+        var results;
+        if (Array.isArray(tasks)) {
+            results = tasks.map(reflect);
+        } else {
+            results = {};
+            Object.keys(tasks).forEach(key => {
+                results[key] = reflect.call(this, tasks[key]);
+            });
+        }
+        return results;
     }
-    else {
-        throw new Error("Unsupported type: data is neither a path or a Buffer");
+
+    function reject(eachfn, arr, _iteratee, callback) {
+        const iteratee = wrapAsync(_iteratee);
+        return _filter(eachfn, arr, (value, cb) => {
+            iteratee(value, (err, v) => {
+                cb(err, !v);
+            });
+        }, callback);
     }
 
-    return new ZipExport(zipped_obj, true, false);
+    /**
+     * The opposite of [`filter`]{@link module:Collections.filter}. Removes values that pass an `async` truth test.
+     *
+     * @name reject
+     * @static
+     * @memberOf module:Collections
+     * @method
+     * @see [async.filter]{@link module:Collections.filter}
+     * @category Collection
+     * @param {Array|Iterable|AsyncIterable|Object} coll - A collection to iterate over.
+     * @param {Function} iteratee - An async truth test to apply to each item in
+     * `coll`.
+     * The should complete with a boolean value as its `result`.
+     * Invoked with (item, callback).
+     * @param {Function} [callback] - A callback which is called after all the
+     * `iteratee` functions have finished. Invoked with (err, results).
+     * @returns {Promise} a promise, if no callback is passed
+     * @example
+     *
+     * // dir1 is a directory that contains file1.txt, file2.txt
+     * // dir2 is a directory that contains file3.txt, file4.txt
+     * // dir3 is a directory that contains file5.txt
+     *
+     * const fileList = ['dir1/file1.txt','dir2/file3.txt','dir3/file6.txt'];
+     *
+     * // asynchronous function that checks if a file exists
+     * function fileExists(file, callback) {
+     *    fs.access(file, fs.constants.F_OK, (err) => {
+     *        callback(null, !err);
+     *    });
+     * }
+     *
+     * // Using callbacks
+     * async.reject(fileList, fileExists, function(err, results) {
+     *    // [ 'dir3/file6.txt' ]
+     *    // results now equals an array of the non-existing files
+     * });
+     *
+     * // Using Promises
+     * async.reject(fileList, fileExists)
+     * .then( results => {
+     *     console.log(results);
+     *     // [ 'dir3/file6.txt' ]
+     *     // results now equals an array of the non-existing files
+     * }).catch( err => {
+     *     console.log(err);
+     * });
+     *
+     * // Using async/await
+     * async () => {
+     *     try {
+     *         let results = await async.reject(fileList, fileExists);
+     *         console.log(results);
+     *         // [ 'dir3/file6.txt' ]
+     *         // results now equals an array of the non-existing files
+     *     }
+     *     catch (err) {
+     *         console.log(err);
+     *     }
+     * }
+     *
+     */
+    function reject$1 (coll, iteratee, callback) {
+        return reject(eachOf$1, coll, iteratee, callback)
+    }
+    var reject$2 = awaitify(reject$1, 3);
+
+    /**
+     * The same as [`reject`]{@link module:Collections.reject} but runs a maximum of `limit` async operations at a
+     * time.
+     *
+     * @name rejectLimit
+     * @static
+     * @memberOf module:Collections
+     * @method
+     * @see [async.reject]{@link module:Collections.reject}
+     * @category Collection
+     * @param {Array|Iterable|AsyncIterable|Object} coll - A collection to iterate over.
+     * @param {number} limit - The maximum number of async operations at a time.
+     * @param {Function} iteratee - An async truth test to apply to each item in
+     * `coll`.
+     * The should complete with a boolean value as its `result`.
+     * Invoked with (item, callback).
+     * @param {Function} [callback] - A callback which is called after all the
+     * `iteratee` functions have finished. Invoked with (err, results).
+     * @returns {Promise} a promise, if no callback is passed
+     */
+    function rejectLimit (coll, limit, iteratee, callback) {
+        return reject(eachOfLimit(limit), coll, iteratee, callback)
+    }
+    var rejectLimit$1 = awaitify(rejectLimit, 4);
+
+    /**
+     * The same as [`reject`]{@link module:Collections.reject} but runs only a single async operation at a time.
+     *
+     * @name rejectSeries
+     * @static
+     * @memberOf module:Collections
+     * @method
+     * @see [async.reject]{@link module:Collections.reject}
+     * @category Collection
+     * @param {Array|Iterable|AsyncIterable|Object} coll - A collection to iterate over.
+     * @param {Function} iteratee - An async truth test to apply to each item in
+     * `coll`.
+     * The should complete with a boolean value as its `result`.
+     * Invoked with (item, callback).
+     * @param {Function} [callback] - A callback which is called after all the
+     * `iteratee` functions have finished. Invoked with (err, results).
+     * @returns {Promise} a promise, if no callback is passed
+     */
+    function rejectSeries (coll, iteratee, callback) {
+        return reject(eachOfSeries$1, coll, iteratee, callback)
+    }
+    var rejectSeries$1 = awaitify(rejectSeries, 3);
+
+    function constant$1(value) {
+        return function () {
+            return value;
+        }
+    }
+
+    /**
+     * Attempts to get a successful response from `task` no more than `times` times
+     * before returning an error. If the task is successful, the `callback` will be
+     * passed the result of the successful task. If all attempts fail, the callback
+     * will be passed the error and result (if any) of the final attempt.
+     *
+     * @name retry
+     * @static
+     * @memberOf module:ControlFlow
+     * @method
+     * @category Control Flow
+     * @see [async.retryable]{@link module:ControlFlow.retryable}
+     * @param {Object|number} [opts = {times: 5, interval: 0}| 5] - Can be either an
+     * object with `times` and `interval` or a number.
+     * * `times` - The number of attempts to make before giving up.  The default
+     *   is `5`.
+     * * `interval` - The time to wait between retries, in milliseconds.  The
+     *   default is `0`. The interval may also be specified as a function of the
+     *   retry count (see example).
+     * * `errorFilter` - An optional synchronous function that is invoked on
+     *   erroneous result. If it returns `true` the retry attempts will continue;
+     *   if the function returns `false` the retry flow is aborted with the current
+     *   attempt's error and result being returned to the final callback.
+     *   Invoked with (err).
+     * * If `opts` is a number, the number specifies the number of times to retry,
+     *   with the default interval of `0`.
+     * @param {AsyncFunction} task - An async function to retry.
+     * Invoked with (callback).
+     * @param {Function} [callback] - An optional callback which is called when the
+     * task has succeeded, or after the final failed attempt. It receives the `err`
+     * and `result` arguments of the last attempt at completing the `task`. Invoked
+     * with (err, results).
+     * @returns {Promise} a promise if no callback provided
+     *
+     * @example
+     *
+     * // The `retry` function can be used as a stand-alone control flow by passing
+     * // a callback, as shown below:
+     *
+     * // try calling apiMethod 3 times
+     * async.retry(3, apiMethod, function(err, result) {
+     *     // do something with the result
+     * });
+     *
+     * // try calling apiMethod 3 times, waiting 200 ms between each retry
+     * async.retry({times: 3, interval: 200}, apiMethod, function(err, result) {
+     *     // do something with the result
+     * });
+     *
+     * // try calling apiMethod 10 times with exponential backoff
+     * // (i.e. intervals of 100, 200, 400, 800, 1600, ... milliseconds)
+     * async.retry({
+     *   times: 10,
+     *   interval: function(retryCount) {
+     *     return 50 * Math.pow(2, retryCount);
+     *   }
+     * }, apiMethod, function(err, result) {
+     *     // do something with the result
+     * });
+     *
+     * // try calling apiMethod the default 5 times no delay between each retry
+     * async.retry(apiMethod, function(err, result) {
+     *     // do something with the result
+     * });
+     *
+     * // try calling apiMethod only when error condition satisfies, all other
+     * // errors will abort the retry control flow and return to final callback
+     * async.retry({
+     *   errorFilter: function(err) {
+     *     return err.message === 'Temporary error'; // only retry on a specific error
+     *   }
+     * }, apiMethod, function(err, result) {
+     *     // do something with the result
+     * });
+     *
+     * // to retry individual methods that are not as reliable within other
+     * // control flow functions, use the `retryable` wrapper:
+     * async.auto({
+     *     users: api.getUsers.bind(api),
+     *     payments: async.retryable(3, api.getPayments.bind(api))
+     * }, function(err, results) {
+     *     // do something with the results
+     * });
+     *
+     */
+    const DEFAULT_TIMES = 5;
+    const DEFAULT_INTERVAL = 0;
+
+    function retry(opts, task, callback) {
+        var options = {
+            times: DEFAULT_TIMES,
+            intervalFunc: constant$1(DEFAULT_INTERVAL)
+        };
+
+        if (arguments.length < 3 && typeof opts === 'function') {
+            callback = task || promiseCallback();
+            task = opts;
+        } else {
+            parseTimes(options, opts);
+            callback = callback || promiseCallback();
+        }
+
+        if (typeof task !== 'function') {
+            throw new Error("Invalid arguments for async.retry");
+        }
+
+        var _task = wrapAsync(task);
+
+        var attempt = 1;
+        function retryAttempt() {
+            _task((err, ...args) => {
+                if (err === false) return
+                if (err && attempt++ < options.times &&
+                    (typeof options.errorFilter != 'function' ||
+                        options.errorFilter(err))) {
+                    setTimeout(retryAttempt, options.intervalFunc(attempt - 1));
+                } else {
+                    callback(err, ...args);
+                }
+            });
+        }
+
+        retryAttempt();
+        return callback[PROMISE_SYMBOL]
+    }
+
+    function parseTimes(acc, t) {
+        if (typeof t === 'object') {
+            acc.times = +t.times || DEFAULT_TIMES;
+
+            acc.intervalFunc = typeof t.interval === 'function' ?
+                t.interval :
+                constant$1(+t.interval || DEFAULT_INTERVAL);
+
+            acc.errorFilter = t.errorFilter;
+        } else if (typeof t === 'number' || typeof t === 'string') {
+            acc.times = +t || DEFAULT_TIMES;
+        } else {
+            throw new Error("Invalid arguments for async.retry");
+        }
+    }
+
+    /**
+     * A close relative of [`retry`]{@link module:ControlFlow.retry}.  This method
+     * wraps a task and makes it retryable, rather than immediately calling it
+     * with retries.
+     *
+     * @name retryable
+     * @static
+     * @memberOf module:ControlFlow
+     * @method
+     * @see [async.retry]{@link module:ControlFlow.retry}
+     * @category Control Flow
+     * @param {Object|number} [opts = {times: 5, interval: 0}| 5] - optional
+     * options, exactly the same as from `retry`, except for a `opts.arity` that
+     * is the arity of the `task` function, defaulting to `task.length`
+     * @param {AsyncFunction} task - the asynchronous function to wrap.
+     * This function will be passed any arguments passed to the returned wrapper.
+     * Invoked with (...args, callback).
+     * @returns {AsyncFunction} The wrapped function, which when invoked, will
+     * retry on an error, based on the parameters specified in `opts`.
+     * This function will accept the same parameters as `task`.
+     * @example
+     *
+     * async.auto({
+     *     dep1: async.retryable(3, getFromFlakyService),
+     *     process: ["dep1", async.retryable(3, function (results, cb) {
+     *         maybeProcessData(results.dep1, cb);
+     *     })]
+     * }, callback);
+     */
+    function retryable (opts, task) {
+        if (!task) {
+            task = opts;
+            opts = null;
+        }
+        let arity = (opts && opts.arity) || task.length;
+        if (isAsync(task)) {
+            arity += 1;
+        }
+        var _task = wrapAsync(task);
+        return initialParams((args, callback) => {
+            if (args.length < arity - 1 || callback == null) {
+                args.push(callback);
+                callback = promiseCallback();
+            }
+            function taskFn(cb) {
+                _task(...args, cb);
+            }
+
+            if (opts) retry(opts, taskFn, callback);
+            else retry(taskFn, callback);
+
+            return callback[PROMISE_SYMBOL]
+        });
+    }
+
+    /**
+     * Run the functions in the `tasks` collection in series, each one running once
+     * the previous function has completed. If any functions in the series pass an
+     * error to its callback, no more functions are run, and `callback` is
+     * immediately called with the value of the error. Otherwise, `callback`
+     * receives an array of results when `tasks` have completed.
+     *
+     * It is also possible to use an object instead of an array. Each property will
+     * be run as a function, and the results will be passed to the final `callback`
+     * as an object instead of an array. This can be a more readable way of handling
+     *  results from {@link async.series}.
+     *
+     * **Note** that while many implementations preserve the order of object
+     * properties, the [ECMAScript Language Specification](http://www.ecma-international.org/ecma-262/5.1/#sec-8.6)
+     * explicitly states that
+     *
+     * > The mechanics and order of enumerating the properties is not specified.
+     *
+     * So if you rely on the order in which your series of functions are executed,
+     * and want this to work on all platforms, consider using an array.
+     *
+     * @name series
+     * @static
+     * @memberOf module:ControlFlow
+     * @method
+     * @category Control Flow
+     * @param {Array|Iterable|AsyncIterable|Object} tasks - A collection containing
+     * [async functions]{@link AsyncFunction} to run in series.
+     * Each function can complete with any number of optional `result` values.
+     * @param {Function} [callback] - An optional callback to run once all the
+     * functions have completed. This function gets a results array (or object)
+     * containing all the result arguments passed to the `task` callbacks. Invoked
+     * with (err, result).
+     * @return {Promise} a promise, if no callback is passed
+     * @example
+     *
+     * //Using Callbacks
+     * async.series([
+     *     function(callback) {
+     *         setTimeout(function() {
+     *             // do some async task
+     *             callback(null, 'one');
+     *         }, 200);
+     *     },
+     *     function(callback) {
+     *         setTimeout(function() {
+     *             // then do another async task
+     *             callback(null, 'two');
+     *         }, 100);
+     *     }
+     * ], function(err, results) {
+     *     console.log(results);
+     *     // results is equal to ['one','two']
+     * });
+     *
+     * // an example using objects instead of arrays
+     * async.series({
+     *     one: function(callback) {
+     *         setTimeout(function() {
+     *             // do some async task
+     *             callback(null, 1);
+     *         }, 200);
+     *     },
+     *     two: function(callback) {
+     *         setTimeout(function() {
+     *             // then do another async task
+     *             callback(null, 2);
+     *         }, 100);
+     *     }
+     * }, function(err, results) {
+     *     console.log(results);
+     *     // results is equal to: { one: 1, two: 2 }
+     * });
+     *
+     * //Using Promises
+     * async.series([
+     *     function(callback) {
+     *         setTimeout(function() {
+     *             callback(null, 'one');
+     *         }, 200);
+     *     },
+     *     function(callback) {
+     *         setTimeout(function() {
+     *             callback(null, 'two');
+     *         }, 100);
+     *     }
+     * ]).then(results => {
+     *     console.log(results);
+     *     // results is equal to ['one','two']
+     * }).catch(err => {
+     *     console.log(err);
+     * });
+     *
+     * // an example using an object instead of an array
+     * async.series({
+     *     one: function(callback) {
+     *         setTimeout(function() {
+     *             // do some async task
+     *             callback(null, 1);
+     *         }, 200);
+     *     },
+     *     two: function(callback) {
+     *         setTimeout(function() {
+     *             // then do another async task
+     *             callback(null, 2);
+     *         }, 100);
+     *     }
+     * }).then(results => {
+     *     console.log(results);
+     *     // results is equal to: { one: 1, two: 2 }
+     * }).catch(err => {
+     *     console.log(err);
+     * });
+     *
+     * //Using async/await
+     * async () => {
+     *     try {
+     *         let results = await async.series([
+     *             function(callback) {
+     *                 setTimeout(function() {
+     *                     // do some async task
+     *                     callback(null, 'one');
+     *                 }, 200);
+     *             },
+     *             function(callback) {
+     *                 setTimeout(function() {
+     *                     // then do another async task
+     *                     callback(null, 'two');
+     *                 }, 100);
+     *             }
+     *         ]);
+     *         console.log(results);
+     *         // results is equal to ['one','two']
+     *     }
+     *     catch (err) {
+     *         console.log(err);
+     *     }
+     * }
+     *
+     * // an example using an object instead of an array
+     * async () => {
+     *     try {
+     *         let results = await async.parallel({
+     *             one: function(callback) {
+     *                 setTimeout(function() {
+     *                     // do some async task
+     *                     callback(null, 1);
+     *                 }, 200);
+     *             },
+     *            two: function(callback) {
+     *                 setTimeout(function() {
+     *                     // then do another async task
+     *                     callback(null, 2);
+     *                 }, 100);
+     *            }
+     *         });
+     *         console.log(results);
+     *         // results is equal to: { one: 1, two: 2 }
+     *     }
+     *     catch (err) {
+     *         console.log(err);
+     *     }
+     * }
+     *
+     */
+    function series(tasks, callback) {
+        return _parallel(eachOfSeries$1, tasks, callback);
+    }
+
+    /**
+     * Returns `true` if at least one element in the `coll` satisfies an async test.
+     * If any iteratee call returns `true`, the main `callback` is immediately
+     * called.
+     *
+     * @name some
+     * @static
+     * @memberOf module:Collections
+     * @method
+     * @alias any
+     * @category Collection
+     * @param {Array|Iterable|AsyncIterable|Object} coll - A collection to iterate over.
+     * @param {AsyncFunction} iteratee - An async truth test to apply to each item
+     * in the collections in parallel.
+     * The iteratee should complete with a boolean `result` value.
+     * Invoked with (item, callback).
+     * @param {Function} [callback] - A callback which is called as soon as any
+     * iteratee returns `true`, or after all the iteratee functions have finished.
+     * Result will be either `true` or `false` depending on the values of the async
+     * tests. Invoked with (err, result).
+     * @returns {Promise} a promise, if no callback provided
+     * @example
+     *
+     * // dir1 is a directory that contains file1.txt, file2.txt
+     * // dir2 is a directory that contains file3.txt, file4.txt
+     * // dir3 is a directory that contains file5.txt
+     * // dir4 does not exist
+     *
+     * // asynchronous function that checks if a file exists
+     * function fileExists(file, callback) {
+     *    fs.access(file, fs.constants.F_OK, (err) => {
+     *        callback(null, !err);
+     *    });
+     * }
+     *
+     * // Using callbacks
+     * async.some(['dir1/missing.txt','dir2/missing.txt','dir3/file5.txt'], fileExists,
+     *    function(err, result) {
+     *        console.log(result);
+     *        // true
+     *        // result is true since some file in the list exists
+     *    }
+     *);
+     *
+     * async.some(['dir1/missing.txt','dir2/missing.txt','dir4/missing.txt'], fileExists,
+     *    function(err, result) {
+     *        console.log(result);
+     *        // false
+     *        // result is false since none of the files exists
+     *    }
+     *);
+     *
+     * // Using Promises
+     * async.some(['dir1/missing.txt','dir2/missing.txt','dir3/file5.txt'], fileExists)
+     * .then( result => {
+     *     console.log(result);
+     *     // true
+     *     // result is true since some file in the list exists
+     * }).catch( err => {
+     *     console.log(err);
+     * });
+     *
+     * async.some(['dir1/missing.txt','dir2/missing.txt','dir4/missing.txt'], fileExists)
+     * .then( result => {
+     *     console.log(result);
+     *     // false
+     *     // result is false since none of the files exists
+     * }).catch( err => {
+     *     console.log(err);
+     * });
+     *
+     * // Using async/await
+     * async () => {
+     *     try {
+     *         let result = await async.some(['dir1/missing.txt','dir2/missing.txt','dir3/file5.txt'], fileExists);
+     *         console.log(result);
+     *         // true
+     *         // result is true since some file in the list exists
+     *     }
+     *     catch (err) {
+     *         console.log(err);
+     *     }
+     * }
+     *
+     * async () => {
+     *     try {
+     *         let result = await async.some(['dir1/missing.txt','dir2/missing.txt','dir4/missing.txt'], fileExists);
+     *         console.log(result);
+     *         // false
+     *         // result is false since none of the files exists
+     *     }
+     *     catch (err) {
+     *         console.log(err);
+     *     }
+     * }
+     *
+     */
+    function some(coll, iteratee, callback) {
+        return _createTester(Boolean, res => res)(eachOf$1, coll, iteratee, callback)
+    }
+    var some$1 = awaitify(some, 3);
+
+    /**
+     * The same as [`some`]{@link module:Collections.some} but runs a maximum of `limit` async operations at a time.
+     *
+     * @name someLimit
+     * @static
+     * @memberOf module:Collections
+     * @method
+     * @see [async.some]{@link module:Collections.some}
+     * @alias anyLimit
+     * @category Collection
+     * @param {Array|Iterable|AsyncIterable|Object} coll - A collection to iterate over.
+     * @param {number} limit - The maximum number of async operations at a time.
+     * @param {AsyncFunction} iteratee - An async truth test to apply to each item
+     * in the collections in parallel.
+     * The iteratee should complete with a boolean `result` value.
+     * Invoked with (item, callback).
+     * @param {Function} [callback] - A callback which is called as soon as any
+     * iteratee returns `true`, or after all the iteratee functions have finished.
+     * Result will be either `true` or `false` depending on the values of the async
+     * tests. Invoked with (err, result).
+     * @returns {Promise} a promise, if no callback provided
+     */
+    function someLimit(coll, limit, iteratee, callback) {
+        return _createTester(Boolean, res => res)(eachOfLimit(limit), coll, iteratee, callback)
+    }
+    var someLimit$1 = awaitify(someLimit, 4);
+
+    /**
+     * The same as [`some`]{@link module:Collections.some} but runs only a single async operation at a time.
+     *
+     * @name someSeries
+     * @static
+     * @memberOf module:Collections
+     * @method
+     * @see [async.some]{@link module:Collections.some}
+     * @alias anySeries
+     * @category Collection
+     * @param {Array|Iterable|AsyncIterable|Object} coll - A collection to iterate over.
+     * @param {AsyncFunction} iteratee - An async truth test to apply to each item
+     * in the collections in series.
+     * The iteratee should complete with a boolean `result` value.
+     * Invoked with (item, callback).
+     * @param {Function} [callback] - A callback which is called as soon as any
+     * iteratee returns `true`, or after all the iteratee functions have finished.
+     * Result will be either `true` or `false` depending on the values of the async
+     * tests. Invoked with (err, result).
+     * @returns {Promise} a promise, if no callback provided
+     */
+    function someSeries(coll, iteratee, callback) {
+        return _createTester(Boolean, res => res)(eachOfSeries$1, coll, iteratee, callback)
+    }
+    var someSeries$1 = awaitify(someSeries, 3);
+
+    /**
+     * Sorts a list by the results of running each `coll` value through an async
+     * `iteratee`.
+     *
+     * @name sortBy
+     * @static
+     * @memberOf module:Collections
+     * @method
+     * @category Collection
+     * @param {Array|Iterable|AsyncIterable|Object} coll - A collection to iterate over.
+     * @param {AsyncFunction} iteratee - An async function to apply to each item in
+     * `coll`.
+     * The iteratee should complete with a value to use as the sort criteria as
+     * its `result`.
+     * Invoked with (item, callback).
+     * @param {Function} callback - A callback which is called after all the
+     * `iteratee` functions have finished, or an error occurs. Results is the items
+     * from the original `coll` sorted by the values returned by the `iteratee`
+     * calls. Invoked with (err, results).
+     * @returns {Promise} a promise, if no callback passed
+     * @example
+     *
+     * // bigfile.txt is a file that is 251100 bytes in size
+     * // mediumfile.txt is a file that is 11000 bytes in size
+     * // smallfile.txt is a file that is 121 bytes in size
+     *
+     * // asynchronous function that returns the file size in bytes
+     * function getFileSizeInBytes(file, callback) {
+     *     fs.stat(file, function(err, stat) {
+     *         if (err) {
+     *             return callback(err);
+     *         }
+     *         callback(null, stat.size);
+     *     });
+     * }
+     *
+     * // Using callbacks
+     * async.sortBy(['mediumfile.txt','smallfile.txt','bigfile.txt'], getFileSizeInBytes,
+     *     function(err, results) {
+     *         if (err) {
+     *             console.log(err);
+     *         } else {
+     *             console.log(results);
+     *             // results is now the original array of files sorted by
+     *             // file size (ascending by default), e.g.
+     *             // [ 'smallfile.txt', 'mediumfile.txt', 'bigfile.txt']
+     *         }
+     *     }
+     * );
+     *
+     * // By modifying the callback parameter the
+     * // sorting order can be influenced:
+     *
+     * // ascending order
+     * async.sortBy(['mediumfile.txt','smallfile.txt','bigfile.txt'], function(file, callback) {
+     *     getFileSizeInBytes(file, function(getFileSizeErr, fileSize) {
+     *         if (getFileSizeErr) return callback(getFileSizeErr);
+     *         callback(null, fileSize);
+     *     });
+     * }, function(err, results) {
+     *         if (err) {
+     *             console.log(err);
+     *         } else {
+     *             console.log(results);
+     *             // results is now the original array of files sorted by
+     *             // file size (ascending by default), e.g.
+     *             // [ 'smallfile.txt', 'mediumfile.txt', 'bigfile.txt']
+     *         }
+     *     }
+     * );
+     *
+     * // descending order
+     * async.sortBy(['bigfile.txt','mediumfile.txt','smallfile.txt'], function(file, callback) {
+     *     getFileSizeInBytes(file, function(getFileSizeErr, fileSize) {
+     *         if (getFileSizeErr) {
+     *             return callback(getFileSizeErr);
+     *         }
+     *         callback(null, fileSize * -1);
+     *     });
+     * }, function(err, results) {
+     *         if (err) {
+     *             console.log(err);
+     *         } else {
+     *             console.log(results);
+     *             // results is now the original array of files sorted by
+     *             // file size (ascending by default), e.g.
+     *             // [ 'bigfile.txt', 'mediumfile.txt', 'smallfile.txt']
+     *         }
+     *     }
+     * );
+     *
+     * // Error handling
+     * async.sortBy(['mediumfile.txt','smallfile.txt','missingfile.txt'], getFileSizeInBytes,
+     *     function(err, results) {
+     *         if (err) {
+     *             console.log(err);
+     *             // [ Error: ENOENT: no such file or directory ]
+     *         } else {
+     *             console.log(results);
+     *         }
+     *     }
+     * );
+     *
+     * // Using Promises
+     * async.sortBy(['mediumfile.txt','smallfile.txt','bigfile.txt'], getFileSizeInBytes)
+     * .then( results => {
+     *     console.log(results);
+     *     // results is now the original array of files sorted by
+     *     // file size (ascending by default), e.g.
+     *     // [ 'smallfile.txt', 'mediumfile.txt', 'bigfile.txt']
+     * }).catch( err => {
+     *     console.log(err);
+     * });
+     *
+     * // Error handling
+     * async.sortBy(['mediumfile.txt','smallfile.txt','missingfile.txt'], getFileSizeInBytes)
+     * .then( results => {
+     *     console.log(results);
+     * }).catch( err => {
+     *     console.log(err);
+     *     // [ Error: ENOENT: no such file or directory ]
+     * });
+     *
+     * // Using async/await
+     * (async () => {
+     *     try {
+     *         let results = await async.sortBy(['bigfile.txt','mediumfile.txt','smallfile.txt'], getFileSizeInBytes);
+     *         console.log(results);
+     *         // results is now the original array of files sorted by
+     *         // file size (ascending by default), e.g.
+     *         // [ 'smallfile.txt', 'mediumfile.txt', 'bigfile.txt']
+     *     }
+     *     catch (err) {
+     *         console.log(err);
+     *     }
+     * })();
+     *
+     * // Error handling
+     * async () => {
+     *     try {
+     *         let results = await async.sortBy(['missingfile.txt','mediumfile.txt','smallfile.txt'], getFileSizeInBytes);
+     *         console.log(results);
+     *     }
+     *     catch (err) {
+     *         console.log(err);
+     *         // [ Error: ENOENT: no such file or directory ]
+     *     }
+     * }
+     *
+     */
+    function sortBy (coll, iteratee, callback) {
+        var _iteratee = wrapAsync(iteratee);
+        return map$1(coll, (x, iterCb) => {
+            _iteratee(x, (err, criteria) => {
+                if (err) return iterCb(err);
+                iterCb(err, {value: x, criteria});
+            });
+        }, (err, results) => {
+            if (err) return callback(err);
+            callback(null, results.sort(comparator).map(v => v.value));
+        });
+
+        function comparator(left, right) {
+            var a = left.criteria, b = right.criteria;
+            return a < b ? -1 : a > b ? 1 : 0;
+        }
+    }
+    var sortBy$1 = awaitify(sortBy, 3);
+
+    /**
+     * Sets a time limit on an asynchronous function. If the function does not call
+     * its callback within the specified milliseconds, it will be called with a
+     * timeout error. The code property for the error object will be `'ETIMEDOUT'`.
+     *
+     * @name timeout
+     * @static
+     * @memberOf module:Utils
+     * @method
+     * @category Util
+     * @param {AsyncFunction} asyncFn - The async function to limit in time.
+     * @param {number} milliseconds - The specified time limit.
+     * @param {*} [info] - Any variable you want attached (`string`, `object`, etc)
+     * to timeout Error for more information..
+     * @returns {AsyncFunction} Returns a wrapped function that can be used with any
+     * of the control flow functions.
+     * Invoke this function with the same parameters as you would `asyncFunc`.
+     * @example
+     *
+     * function myFunction(foo, callback) {
+     *     doAsyncTask(foo, function(err, data) {
+     *         // handle errors
+     *         if (err) return callback(err);
+     *
+     *         // do some stuff ...
+     *
+     *         // return processed data
+     *         return callback(null, data);
+     *     });
+     * }
+     *
+     * var wrapped = async.timeout(myFunction, 1000);
+     *
+     * // call `wrapped` as you would `myFunction`
+     * wrapped({ bar: 'bar' }, function(err, data) {
+     *     // if `myFunction` takes < 1000 ms to execute, `err`
+     *     // and `data` will have their expected values
+     *
+     *     // else `err` will be an Error with the code 'ETIMEDOUT'
+     * });
+     */
+    function timeout(asyncFn, milliseconds, info) {
+        var fn = wrapAsync(asyncFn);
+
+        return initialParams((args, callback) => {
+            var timedOut = false;
+            var timer;
+
+            function timeoutCallback() {
+                var name = asyncFn.name || 'anonymous';
+                var error  = new Error('Callback function "' + name + '" timed out.');
+                error.code = 'ETIMEDOUT';
+                if (info) {
+                    error.info = info;
+                }
+                timedOut = true;
+                callback(error);
+            }
+
+            args.push((...cbArgs) => {
+                if (!timedOut) {
+                    callback(...cbArgs);
+                    clearTimeout(timer);
+                }
+            });
+
+            // setup timer and call original function
+            timer = setTimeout(timeoutCallback, milliseconds);
+            fn(...args);
+        });
+    }
+
+    function range(size) {
+        var result = Array(size);
+        while (size--) {
+            result[size] = size;
+        }
+        return result;
+    }
+
+    /**
+     * The same as [times]{@link module:ControlFlow.times} but runs a maximum of `limit` async operations at a
+     * time.
+     *
+     * @name timesLimit
+     * @static
+     * @memberOf module:ControlFlow
+     * @method
+     * @see [async.times]{@link module:ControlFlow.times}
+     * @category Control Flow
+     * @param {number} count - The number of times to run the function.
+     * @param {number} limit - The maximum number of async operations at a time.
+     * @param {AsyncFunction} iteratee - The async function to call `n` times.
+     * Invoked with the iteration index and a callback: (n, next).
+     * @param {Function} callback - see [async.map]{@link module:Collections.map}.
+     * @returns {Promise} a promise, if no callback is provided
+     */
+    function timesLimit(count, limit, iteratee, callback) {
+        var _iteratee = wrapAsync(iteratee);
+        return mapLimit$1(range(count), limit, _iteratee, callback);
+    }
+
+    /**
+     * Calls the `iteratee` function `n` times, and accumulates results in the same
+     * manner you would use with [map]{@link module:Collections.map}.
+     *
+     * @name times
+     * @static
+     * @memberOf module:ControlFlow
+     * @method
+     * @see [async.map]{@link module:Collections.map}
+     * @category Control Flow
+     * @param {number} n - The number of times to run the function.
+     * @param {AsyncFunction} iteratee - The async function to call `n` times.
+     * Invoked with the iteration index and a callback: (n, next).
+     * @param {Function} callback - see {@link module:Collections.map}.
+     * @returns {Promise} a promise, if no callback is provided
+     * @example
+     *
+     * // Pretend this is some complicated async factory
+     * var createUser = function(id, callback) {
+     *     callback(null, {
+     *         id: 'user' + id
+     *     });
+     * };
+     *
+     * // generate 5 users
+     * async.times(5, function(n, next) {
+     *     createUser(n, function(err, user) {
+     *         next(err, user);
+     *     });
+     * }, function(err, users) {
+     *     // we should now have 5 users
+     * });
+     */
+    function times (n, iteratee, callback) {
+        return timesLimit(n, Infinity, iteratee, callback)
+    }
+
+    /**
+     * The same as [times]{@link module:ControlFlow.times} but runs only a single async operation at a time.
+     *
+     * @name timesSeries
+     * @static
+     * @memberOf module:ControlFlow
+     * @method
+     * @see [async.times]{@link module:ControlFlow.times}
+     * @category Control Flow
+     * @param {number} n - The number of times to run the function.
+     * @param {AsyncFunction} iteratee - The async function to call `n` times.
+     * Invoked with the iteration index and a callback: (n, next).
+     * @param {Function} callback - see {@link module:Collections.map}.
+     * @returns {Promise} a promise, if no callback is provided
+     */
+    function timesSeries (n, iteratee, callback) {
+        return timesLimit(n, 1, iteratee, callback)
+    }
+
+    /**
+     * A relative of `reduce`.  Takes an Object or Array, and iterates over each
+     * element in parallel, each step potentially mutating an `accumulator` value.
+     * The type of the accumulator defaults to the type of collection passed in.
+     *
+     * @name transform
+     * @static
+     * @memberOf module:Collections
+     * @method
+     * @category Collection
+     * @param {Array|Iterable|AsyncIterable|Object} coll - A collection to iterate over.
+     * @param {*} [accumulator] - The initial state of the transform.  If omitted,
+     * it will default to an empty Object or Array, depending on the type of `coll`
+     * @param {AsyncFunction} iteratee - A function applied to each item in the
+     * collection that potentially modifies the accumulator.
+     * Invoked with (accumulator, item, key, callback).
+     * @param {Function} [callback] - A callback which is called after all the
+     * `iteratee` functions have finished. Result is the transformed accumulator.
+     * Invoked with (err, result).
+     * @returns {Promise} a promise, if no callback provided
+     * @example
+     *
+     * // file1.txt is a file that is 1000 bytes in size
+     * // file2.txt is a file that is 2000 bytes in size
+     * // file3.txt is a file that is 3000 bytes in size
+     *
+     * // helper function that returns human-readable size format from bytes
+     * function formatBytes(bytes, decimals = 2) {
+     *   // implementation not included for brevity
+     *   return humanReadbleFilesize;
+     * }
+     *
+     * const fileList = ['file1.txt','file2.txt','file3.txt'];
+     *
+     * // asynchronous function that returns the file size, transformed to human-readable format
+     * // e.g. 1024 bytes = 1KB, 1234 bytes = 1.21 KB, 1048576 bytes = 1MB, etc.
+     * function transformFileSize(acc, value, key, callback) {
+     *     fs.stat(value, function(err, stat) {
+     *         if (err) {
+     *             return callback(err);
+     *         }
+     *         acc[key] = formatBytes(stat.size);
+     *         callback(null);
+     *     });
+     * }
+     *
+     * // Using callbacks
+     * async.transform(fileList, transformFileSize, function(err, result) {
+     *     if(err) {
+     *         console.log(err);
+     *     } else {
+     *         console.log(result);
+     *         // [ '1000 Bytes', '1.95 KB', '2.93 KB' ]
+     *     }
+     * });
+     *
+     * // Using Promises
+     * async.transform(fileList, transformFileSize)
+     * .then(result => {
+     *     console.log(result);
+     *     // [ '1000 Bytes', '1.95 KB', '2.93 KB' ]
+     * }).catch(err => {
+     *     console.log(err);
+     * });
+     *
+     * // Using async/await
+     * (async () => {
+     *     try {
+     *         let result = await async.transform(fileList, transformFileSize);
+     *         console.log(result);
+     *         // [ '1000 Bytes', '1.95 KB', '2.93 KB' ]
+     *     }
+     *     catch (err) {
+     *         console.log(err);
+     *     }
+     * })();
+     *
+     * @example
+     *
+     * // file1.txt is a file that is 1000 bytes in size
+     * // file2.txt is a file that is 2000 bytes in size
+     * // file3.txt is a file that is 3000 bytes in size
+     *
+     * // helper function that returns human-readable size format from bytes
+     * function formatBytes(bytes, decimals = 2) {
+     *   // implementation not included for brevity
+     *   return humanReadbleFilesize;
+     * }
+     *
+     * const fileMap = { f1: 'file1.txt', f2: 'file2.txt', f3: 'file3.txt' };
+     *
+     * // asynchronous function that returns the file size, transformed to human-readable format
+     * // e.g. 1024 bytes = 1KB, 1234 bytes = 1.21 KB, 1048576 bytes = 1MB, etc.
+     * function transformFileSize(acc, value, key, callback) {
+     *     fs.stat(value, function(err, stat) {
+     *         if (err) {
+     *             return callback(err);
+     *         }
+     *         acc[key] = formatBytes(stat.size);
+     *         callback(null);
+     *     });
+     * }
+     *
+     * // Using callbacks
+     * async.transform(fileMap, transformFileSize, function(err, result) {
+     *     if(err) {
+     *         console.log(err);
+     *     } else {
+     *         console.log(result);
+     *         // { f1: '1000 Bytes', f2: '1.95 KB', f3: '2.93 KB' }
+     *     }
+     * });
+     *
+     * // Using Promises
+     * async.transform(fileMap, transformFileSize)
+     * .then(result => {
+     *     console.log(result);
+     *     // { f1: '1000 Bytes', f2: '1.95 KB', f3: '2.93 KB' }
+     * }).catch(err => {
+     *     console.log(err);
+     * });
+     *
+     * // Using async/await
+     * async () => {
+     *     try {
+     *         let result = await async.transform(fileMap, transformFileSize);
+     *         console.log(result);
+     *         // { f1: '1000 Bytes', f2: '1.95 KB', f3: '2.93 KB' }
+     *     }
+     *     catch (err) {
+     *         console.log(err);
+     *     }
+     * }
+     *
+     */
+    function transform (coll, accumulator, iteratee, callback) {
+        if (arguments.length <= 3 && typeof accumulator === 'function') {
+            callback = iteratee;
+            iteratee = accumulator;
+            accumulator = Array.isArray(coll) ? [] : {};
+        }
+        callback = once(callback || promiseCallback());
+        var _iteratee = wrapAsync(iteratee);
+
+        eachOf$1(coll, (v, k, cb) => {
+            _iteratee(accumulator, v, k, cb);
+        }, err => callback(err, accumulator));
+        return callback[PROMISE_SYMBOL]
+    }
+
+    /**
+     * It runs each task in series but stops whenever any of the functions were
+     * successful. If one of the tasks were successful, the `callback` will be
+     * passed the result of the successful task. If all tasks fail, the callback
+     * will be passed the error and result (if any) of the final attempt.
+     *
+     * @name tryEach
+     * @static
+     * @memberOf module:ControlFlow
+     * @method
+     * @category Control Flow
+     * @param {Array|Iterable|AsyncIterable|Object} tasks - A collection containing functions to
+     * run, each function is passed a `callback(err, result)` it must call on
+     * completion with an error `err` (which can be `null`) and an optional `result`
+     * value.
+     * @param {Function} [callback] - An optional callback which is called when one
+     * of the tasks has succeeded, or all have failed. It receives the `err` and
+     * `result` arguments of the last attempt at completing the `task`. Invoked with
+     * (err, results).
+     * @returns {Promise} a promise, if no callback is passed
+     * @example
+     * async.tryEach([
+     *     function getDataFromFirstWebsite(callback) {
+     *         // Try getting the data from the first website
+     *         callback(err, data);
+     *     },
+     *     function getDataFromSecondWebsite(callback) {
+     *         // First website failed,
+     *         // Try getting the data from the backup website
+     *         callback(err, data);
+     *     }
+     * ],
+     * // optional callback
+     * function(err, results) {
+     *     Now do something with the data.
+     * });
+     *
+     */
+    function tryEach(tasks, callback) {
+        var error = null;
+        var result;
+        return eachSeries$1(tasks, (task, taskCb) => {
+            wrapAsync(task)((err, ...args) => {
+                if (err === false) return taskCb(err);
+
+                if (args.length < 2) {
+                    [result] = args;
+                } else {
+                    result = args;
+                }
+                error = err;
+                taskCb(err ? null : {});
+            });
+        }, () => callback(error, result));
+    }
+
+    var tryEach$1 = awaitify(tryEach);
+
+    /**
+     * Undoes a [memoize]{@link module:Utils.memoize}d function, reverting it to the original,
+     * unmemoized form. Handy for testing.
+     *
+     * @name unmemoize
+     * @static
+     * @memberOf module:Utils
+     * @method
+     * @see [async.memoize]{@link module:Utils.memoize}
+     * @category Util
+     * @param {AsyncFunction} fn - the memoized function
+     * @returns {AsyncFunction} a function that calls the original unmemoized function
+     */
+    function unmemoize(fn) {
+        return (...args) => {
+            return (fn.unmemoized || fn)(...args);
+        };
+    }
+
+    /**
+     * Repeatedly call `iteratee`, while `test` returns `true`. Calls `callback` when
+     * stopped, or an error occurs.
+     *
+     * @name whilst
+     * @static
+     * @memberOf module:ControlFlow
+     * @method
+     * @category Control Flow
+     * @param {AsyncFunction} test - asynchronous truth test to perform before each
+     * execution of `iteratee`. Invoked with ().
+     * @param {AsyncFunction} iteratee - An async function which is called each time
+     * `test` passes. Invoked with (callback).
+     * @param {Function} [callback] - A callback which is called after the test
+     * function has failed and repeated execution of `iteratee` has stopped. `callback`
+     * will be passed an error and any arguments passed to the final `iteratee`'s
+     * callback. Invoked with (err, [results]);
+     * @returns {Promise} a promise, if no callback is passed
+     * @example
+     *
+     * var count = 0;
+     * async.whilst(
+     *     function test(cb) { cb(null, count < 5); },
+     *     function iter(callback) {
+     *         count++;
+     *         setTimeout(function() {
+     *             callback(null, count);
+     *         }, 1000);
+     *     },
+     *     function (err, n) {
+     *         // 5 seconds have passed, n = 5
+     *     }
+     * );
+     */
+    function whilst(test, iteratee, callback) {
+        callback = onlyOnce(callback);
+        var _fn = wrapAsync(iteratee);
+        var _test = wrapAsync(test);
+        var results = [];
+
+        function next(err, ...rest) {
+            if (err) return callback(err);
+            results = rest;
+            if (err === false) return;
+            _test(check);
+        }
+
+        function check(err, truth) {
+            if (err) return callback(err);
+            if (err === false) return;
+            if (!truth) return callback(null, ...results);
+            _fn(next);
+        }
+
+        return _test(check);
+    }
+    var whilst$1 = awaitify(whilst, 3);
+
+    /**
+     * Repeatedly call `iteratee` until `test` returns `true`. Calls `callback` when
+     * stopped, or an error occurs. `callback` will be passed an error and any
+     * arguments passed to the final `iteratee`'s callback.
+     *
+     * The inverse of [whilst]{@link module:ControlFlow.whilst}.
+     *
+     * @name until
+     * @static
+     * @memberOf module:ControlFlow
+     * @method
+     * @see [async.whilst]{@link module:ControlFlow.whilst}
+     * @category Control Flow
+     * @param {AsyncFunction} test - asynchronous truth test to perform before each
+     * execution of `iteratee`. Invoked with (callback).
+     * @param {AsyncFunction} iteratee - An async function which is called each time
+     * `test` fails. Invoked with (callback).
+     * @param {Function} [callback] - A callback which is called after the test
+     * function has passed and repeated execution of `iteratee` has stopped. `callback`
+     * will be passed an error and any arguments passed to the final `iteratee`'s
+     * callback. Invoked with (err, [results]);
+     * @returns {Promise} a promise, if a callback is not passed
+     *
+     * @example
+     * const results = []
+     * let finished = false
+     * async.until(function test(cb) {
+     *     cb(null, finished)
+     * }, function iter(next) {
+     *     fetchPage(url, (err, body) => {
+     *         if (err) return next(err)
+     *         results = results.concat(body.objects)
+     *         finished = !!body.next
+     *         next(err)
+     *     })
+     * }, function done (err) {
+     *     // all pages have been fetched
+     * })
+     */
+    function until(test, iteratee, callback) {
+        const _test = wrapAsync(test);
+        return whilst$1((cb) => _test((err, truth) => cb (err, !truth)), iteratee, callback);
+    }
+
+    /**
+     * Runs the `tasks` array of functions in series, each passing their results to
+     * the next in the array. However, if any of the `tasks` pass an error to their
+     * own callback, the next function is not executed, and the main `callback` is
+     * immediately called with the error.
+     *
+     * @name waterfall
+     * @static
+     * @memberOf module:ControlFlow
+     * @method
+     * @category Control Flow
+     * @param {Array} tasks - An array of [async functions]{@link AsyncFunction}
+     * to run.
+     * Each function should complete with any number of `result` values.
+     * The `result` values will be passed as arguments, in order, to the next task.
+     * @param {Function} [callback] - An optional callback to run once all the
+     * functions have completed. This will be passed the results of the last task's
+     * callback. Invoked with (err, [results]).
+     * @returns undefined
+     * @example
+     *
+     * async.waterfall([
+     *     function(callback) {
+     *         callback(null, 'one', 'two');
+     *     },
+     *     function(arg1, arg2, callback) {
+     *         // arg1 now equals 'one' and arg2 now equals 'two'
+     *         callback(null, 'three');
+     *     },
+     *     function(arg1, callback) {
+     *         // arg1 now equals 'three'
+     *         callback(null, 'done');
+     *     }
+     * ], function (err, result) {
+     *     // result now equals 'done'
+     * });
+     *
+     * // Or, with named functions:
+     * async.waterfall([
+     *     myFirstFunction,
+     *     mySecondFunction,
+     *     myLastFunction,
+     * ], function (err, result) {
+     *     // result now equals 'done'
+     * });
+     * function myFirstFunction(callback) {
+     *     callback(null, 'one', 'two');
+     * }
+     * function mySecondFunction(arg1, arg2, callback) {
+     *     // arg1 now equals 'one' and arg2 now equals 'two'
+     *     callback(null, 'three');
+     * }
+     * function myLastFunction(arg1, callback) {
+     *     // arg1 now equals 'three'
+     *     callback(null, 'done');
+     * }
+     */
+    function waterfall (tasks, callback) {
+        callback = once(callback);
+        if (!Array.isArray(tasks)) return callback(new Error('First argument to waterfall must be an array of functions'));
+        if (!tasks.length) return callback();
+        var taskIndex = 0;
+
+        function nextTask(args) {
+            var task = wrapAsync(tasks[taskIndex++]);
+            task(...args, onlyOnce(next));
+        }
+
+        function next(err, ...args) {
+            if (err === false) return
+            if (err || taskIndex === tasks.length) {
+                return callback(err, ...args);
+            }
+            nextTask(args);
+        }
+
+        nextTask([]);
+    }
+
+    var waterfall$1 = awaitify(waterfall);
+
+    /**
+     * An "async function" in the context of Async is an asynchronous function with
+     * a variable number of parameters, with the final parameter being a callback.
+     * (`function (arg1, arg2, ..., callback) {}`)
+     * The final callback is of the form `callback(err, results...)`, which must be
+     * called once the function is completed.  The callback should be called with a
+     * Error as its first argument to signal that an error occurred.
+     * Otherwise, if no error occurred, it should be called with `null` as the first
+     * argument, and any additional `result` arguments that may apply, to signal
+     * successful completion.
+     * The callback must be called exactly once, ideally on a later tick of the
+     * JavaScript event loop.
+     *
+     * This type of function is also referred to as a "Node-style async function",
+     * or a "continuation passing-style function" (CPS). Most of the methods of this
+     * library are themselves CPS/Node-style async functions, or functions that
+     * return CPS/Node-style async functions.
+     *
+     * Wherever we accept a Node-style async function, we also directly accept an
+     * [ES2017 `async` function]{@link https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/async_function}.
+     * In this case, the `async` function will not be passed a final callback
+     * argument, and any thrown error will be used as the `err` argument of the
+     * implicit callback, and the return value will be used as the `result` value.
+     * (i.e. a `rejected` of the returned Promise becomes the `err` callback
+     * argument, and a `resolved` value becomes the `result`.)
+     *
+     * Note, due to JavaScript limitations, we can only detect native `async`
+     * functions and not transpilied implementations.
+     * Your environment must have `async`/`await` support for this to work.
+     * (e.g. Node > v7.6, or a recent version of a modern browser).
+     * If you are using `async` functions through a transpiler (e.g. Babel), you
+     * must still wrap the function with [asyncify]{@link module:Utils.asyncify},
+     * because the `async function` will be compiled to an ordinary function that
+     * returns a promise.
+     *
+     * @typedef {Function} AsyncFunction
+     * @static
+     */
+
+    var index = {
+        apply,
+        applyEach: applyEach$1,
+        applyEachSeries,
+        asyncify,
+        auto,
+        autoInject,
+        cargo,
+        cargoQueue: cargo$1,
+        compose,
+        concat: concat$1,
+        concatLimit: concatLimit$1,
+        concatSeries: concatSeries$1,
+        constant,
+        detect: detect$1,
+        detectLimit: detectLimit$1,
+        detectSeries: detectSeries$1,
+        dir,
+        doUntil,
+        doWhilst: doWhilst$1,
+        each,
+        eachLimit: eachLimit$2,
+        eachOf: eachOf$1,
+        eachOfLimit: eachOfLimit$2,
+        eachOfSeries: eachOfSeries$1,
+        eachSeries: eachSeries$1,
+        ensureAsync,
+        every: every$1,
+        everyLimit: everyLimit$1,
+        everySeries: everySeries$1,
+        filter: filter$1,
+        filterLimit: filterLimit$1,
+        filterSeries: filterSeries$1,
+        forever: forever$1,
+        groupBy,
+        groupByLimit: groupByLimit$1,
+        groupBySeries,
+        log,
+        map: map$1,
+        mapLimit: mapLimit$1,
+        mapSeries: mapSeries$1,
+        mapValues,
+        mapValuesLimit: mapValuesLimit$1,
+        mapValuesSeries,
+        memoize,
+        nextTick,
+        parallel,
+        parallelLimit,
+        priorityQueue,
+        queue: queue$1,
+        race: race$1,
+        reduce: reduce$1,
+        reduceRight,
+        reflect,
+        reflectAll,
+        reject: reject$2,
+        rejectLimit: rejectLimit$1,
+        rejectSeries: rejectSeries$1,
+        retry,
+        retryable,
+        seq,
+        series,
+        setImmediate: setImmediate$1,
+        some: some$1,
+        someLimit: someLimit$1,
+        someSeries: someSeries$1,
+        sortBy: sortBy$1,
+        timeout,
+        times,
+        timesLimit,
+        timesSeries,
+        transform,
+        tryEach: tryEach$1,
+        unmemoize,
+        until,
+        waterfall: waterfall$1,
+        whilst: whilst$1,
+
+        // aliases
+        all: every$1,
+        allLimit: everyLimit$1,
+        allSeries: everySeries$1,
+        any: some$1,
+        anyLimit: someLimit$1,
+        anySeries: someSeries$1,
+        find: detect$1,
+        findLimit: detectLimit$1,
+        findSeries: detectSeries$1,
+        flatMap: concat$1,
+        flatMapLimit: concatLimit$1,
+        flatMapSeries: concatSeries$1,
+        forEach: each,
+        forEachSeries: eachSeries$1,
+        forEachLimit: eachLimit$2,
+        forEachOf: eachOf$1,
+        forEachOfSeries: eachOfSeries$1,
+        forEachOfLimit: eachOfLimit$2,
+        inject: reduce$1,
+        foldl: reduce$1,
+        foldr: reduceRight,
+        select: filter$1,
+        selectLimit: filterLimit$1,
+        selectSeries: filterSeries$1,
+        wrapSync: asyncify,
+        during: whilst$1,
+        doDuring: doWhilst$1
+    };
+
+    exports.default = index;
+    exports.apply = apply;
+    exports.applyEach = applyEach$1;
+    exports.applyEachSeries = applyEachSeries;
+    exports.asyncify = asyncify;
+    exports.auto = auto;
+    exports.autoInject = autoInject;
+    exports.cargo = cargo;
+    exports.cargoQueue = cargo$1;
+    exports.compose = compose;
+    exports.concat = concat$1;
+    exports.concatLimit = concatLimit$1;
+    exports.concatSeries = concatSeries$1;
+    exports.constant = constant;
+    exports.detect = detect$1;
+    exports.detectLimit = detectLimit$1;
+    exports.detectSeries = detectSeries$1;
+    exports.dir = dir;
+    exports.doUntil = doUntil;
+    exports.doWhilst = doWhilst$1;
+    exports.each = each;
+    exports.eachLimit = eachLimit$2;
+    exports.eachOf = eachOf$1;
+    exports.eachOfLimit = eachOfLimit$2;
+    exports.eachOfSeries = eachOfSeries$1;
+    exports.eachSeries = eachSeries$1;
+    exports.ensureAsync = ensureAsync;
+    exports.every = every$1;
+    exports.everyLimit = everyLimit$1;
+    exports.everySeries = everySeries$1;
+    exports.filter = filter$1;
+    exports.filterLimit = filterLimit$1;
+    exports.filterSeries = filterSeries$1;
+    exports.forever = forever$1;
+    exports.groupBy = groupBy;
+    exports.groupByLimit = groupByLimit$1;
+    exports.groupBySeries = groupBySeries;
+    exports.log = log;
+    exports.map = map$1;
+    exports.mapLimit = mapLimit$1;
+    exports.mapSeries = mapSeries$1;
+    exports.mapValues = mapValues;
+    exports.mapValuesLimit = mapValuesLimit$1;
+    exports.mapValuesSeries = mapValuesSeries;
+    exports.memoize = memoize;
+    exports.nextTick = nextTick;
+    exports.parallel = parallel;
+    exports.parallelLimit = parallelLimit;
+    exports.priorityQueue = priorityQueue;
+    exports.queue = queue$1;
+    exports.race = race$1;
+    exports.reduce = reduce$1;
+    exports.reduceRight = reduceRight;
+    exports.reflect = reflect;
+    exports.reflectAll = reflectAll;
+    exports.reject = reject$2;
+    exports.rejectLimit = rejectLimit$1;
+    exports.rejectSeries = rejectSeries$1;
+    exports.retry = retry;
+    exports.retryable = retryable;
+    exports.seq = seq;
+    exports.series = series;
+    exports.setImmediate = setImmediate$1;
+    exports.some = some$1;
+    exports.someLimit = someLimit$1;
+    exports.someSeries = someSeries$1;
+    exports.sortBy = sortBy$1;
+    exports.timeout = timeout;
+    exports.times = times;
+    exports.timesLimit = timesLimit;
+    exports.timesSeries = timesSeries;
+    exports.transform = transform;
+    exports.tryEach = tryEach$1;
+    exports.unmemoize = unmemoize;
+    exports.until = until;
+    exports.waterfall = waterfall$1;
+    exports.whilst = whilst$1;
+    exports.all = every$1;
+    exports.allLimit = everyLimit$1;
+    exports.allSeries = everySeries$1;
+    exports.any = some$1;
+    exports.anyLimit = someLimit$1;
+    exports.anySeries = someSeries$1;
+    exports.find = detect$1;
+    exports.findLimit = detectLimit$1;
+    exports.findSeries = detectSeries$1;
+    exports.flatMap = concat$1;
+    exports.flatMapLimit = concatLimit$1;
+    exports.flatMapSeries = concatSeries$1;
+    exports.forEach = each;
+    exports.forEachSeries = eachSeries$1;
+    exports.forEachLimit = eachLimit$2;
+    exports.forEachOf = eachOf$1;
+    exports.forEachOfSeries = eachOfSeries$1;
+    exports.forEachOfLimit = eachOfLimit$2;
+    exports.inject = reduce$1;
+    exports.foldl = reduce$1;
+    exports.foldr = reduceRight;
+    exports.select = filter$1;
+    exports.selectLimit = filterLimit$1;
+    exports.selectSeries = filterSeries$1;
+    exports.wrapSync = asyncify;
+    exports.during = whilst$1;
+    exports.doDuring = doWhilst$1;
+
+    Object.defineProperty(exports, '__esModule', { value: true });
+
+})));
+
+
+/***/ }),
+
+/***/ 2616:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+
+var utils = __nccwpck_require__(530);
+var support = __nccwpck_require__(6964);
+// private property
+var _keyStr = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
+
+
+// public method for encoding
+exports.encode = function(input) {
+    var output = [];
+    var chr1, chr2, chr3, enc1, enc2, enc3, enc4;
+    var i = 0, len = input.length, remainingBytes = len;
+
+    var isArray = utils.getTypeOf(input) !== "string";
+    while (i < input.length) {
+        remainingBytes = len - i;
+
+        if (!isArray) {
+            chr1 = input.charCodeAt(i++);
+            chr2 = i < len ? input.charCodeAt(i++) : 0;
+            chr3 = i < len ? input.charCodeAt(i++) : 0;
+        } else {
+            chr1 = input[i++];
+            chr2 = i < len ? input[i++] : 0;
+            chr3 = i < len ? input[i++] : 0;
+        }
+
+        enc1 = chr1 >> 2;
+        enc2 = ((chr1 & 3) << 4) | (chr2 >> 4);
+        enc3 = remainingBytes > 1 ? (((chr2 & 15) << 2) | (chr3 >> 6)) : 64;
+        enc4 = remainingBytes > 2 ? (chr3 & 63) : 64;
+
+        output.push(_keyStr.charAt(enc1) + _keyStr.charAt(enc2) + _keyStr.charAt(enc3) + _keyStr.charAt(enc4));
+
+    }
+
+    return output.join("");
+};
+
+// public method for decoding
+exports.decode = function(input) {
+    var chr1, chr2, chr3;
+    var enc1, enc2, enc3, enc4;
+    var i = 0, resultIndex = 0;
+
+    var dataUrlPrefix = "data:";
+
+    if (input.substr(0, dataUrlPrefix.length) === dataUrlPrefix) {
+        // This is a common error: people give a data url
+        // (data:image/png;base64,iVBOR...) with a {base64: true} and
+        // wonders why things don't work.
+        // We can detect that the string input looks like a data url but we
+        // *can't* be sure it is one: removing everything up to the comma would
+        // be too dangerous.
+        throw new Error("Invalid base64 input, it looks like a data url.");
+    }
+
+    input = input.replace(/[^A-Za-z0-9\+\/\=]/g, "");
+
+    var totalLength = input.length * 3 / 4;
+    if(input.charAt(input.length - 1) === _keyStr.charAt(64)) {
+        totalLength--;
+    }
+    if(input.charAt(input.length - 2) === _keyStr.charAt(64)) {
+        totalLength--;
+    }
+    if (totalLength % 1 !== 0) {
+        // totalLength is not an integer, the length does not match a valid
+        // base64 content. That can happen if:
+        // - the input is not a base64 content
+        // - the input is *almost* a base64 content, with a extra chars at the
+        //   beginning or at the end
+        // - the input uses a base64 variant (base64url for example)
+        throw new Error("Invalid base64 input, bad content length.");
+    }
+    var output;
+    if (support.uint8array) {
+        output = new Uint8Array(totalLength|0);
+    } else {
+        output = new Array(totalLength|0);
+    }
+
+    while (i < input.length) {
+
+        enc1 = _keyStr.indexOf(input.charAt(i++));
+        enc2 = _keyStr.indexOf(input.charAt(i++));
+        enc3 = _keyStr.indexOf(input.charAt(i++));
+        enc4 = _keyStr.indexOf(input.charAt(i++));
+
+        chr1 = (enc1 << 2) | (enc2 >> 4);
+        chr2 = ((enc2 & 15) << 4) | (enc3 >> 2);
+        chr3 = ((enc3 & 3) << 6) | enc4;
+
+        output[resultIndex++] = chr1;
+
+        if (enc3 !== 64) {
+            output[resultIndex++] = chr2;
+        }
+        if (enc4 !== 64) {
+            output[resultIndex++] = chr3;
+        }
+
+    }
+
+    return output;
 };
 
 
-module.exports = ZipLocal;
+/***/ }),
+
+/***/ 9820:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+
+
+var external = __nccwpck_require__(4009);
+var DataWorker = __nccwpck_require__(4538);
+var Crc32Probe = __nccwpck_require__(6562);
+var DataLengthProbe = __nccwpck_require__(508);
+
+/**
+ * Represent a compressed object, with everything needed to decompress it.
+ * @constructor
+ * @param {number} compressedSize the size of the data compressed.
+ * @param {number} uncompressedSize the size of the data after decompression.
+ * @param {number} crc32 the crc32 of the decompressed file.
+ * @param {object} compression the type of compression, see lib/compressions.js.
+ * @param {String|ArrayBuffer|Uint8Array|Buffer} data the compressed data.
+ */
+function CompressedObject(compressedSize, uncompressedSize, crc32, compression, data) {
+    this.compressedSize = compressedSize;
+    this.uncompressedSize = uncompressedSize;
+    this.crc32 = crc32;
+    this.compression = compression;
+    this.compressedContent = data;
+}
+
+CompressedObject.prototype = {
+    /**
+     * Create a worker to get the uncompressed content.
+     * @return {GenericWorker} the worker.
+     */
+    getContentWorker: function () {
+        var worker = new DataWorker(external.Promise.resolve(this.compressedContent))
+            .pipe(this.compression.uncompressWorker())
+            .pipe(new DataLengthProbe("data_length"));
+
+        var that = this;
+        worker.on("end", function () {
+            if (this.streamInfo['data_length'] !== that.uncompressedSize) {
+                throw new Error("Bug : uncompressed data size mismatch");
+            }
+        });
+        return worker;
+    },
+    /**
+     * Create a worker to get the compressed content.
+     * @return {GenericWorker} the worker.
+     */
+    getCompressedWorker: function () {
+        return new DataWorker(external.Promise.resolve(this.compressedContent))
+            .withStreamInfo("compressedSize", this.compressedSize)
+            .withStreamInfo("uncompressedSize", this.uncompressedSize)
+            .withStreamInfo("crc32", this.crc32)
+            .withStreamInfo("compression", this.compression)
+            ;
+    }
+};
+
+/**
+ * Chain the given worker with other workers to compress the content with the
+ * given compression.
+ * @param {GenericWorker} uncompressedWorker the worker to pipe.
+ * @param {Object} compression the compression object.
+ * @param {Object} compressionOptions the options to use when compressing.
+ * @return {GenericWorker} the new worker compressing the content.
+ */
+CompressedObject.createWorkerFrom = function (uncompressedWorker, compression, compressionOptions) {
+    return uncompressedWorker
+        .pipe(new Crc32Probe())
+        .pipe(new DataLengthProbe("uncompressedSize"))
+        .pipe(compression.compressWorker(compressionOptions))
+        .pipe(new DataLengthProbe("compressedSize"))
+        .withStreamInfo("compression", compression);
+};
+
+module.exports = CompressedObject;
+
+
+/***/ }),
+
+/***/ 7042:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+
+
+var GenericWorker = __nccwpck_require__(7518);
+
+exports.STORE = {
+    magic: "\x00\x00",
+    compressWorker : function (compressionOptions) {
+        return new GenericWorker("STORE compression");
+    },
+    uncompressWorker : function () {
+        return new GenericWorker("STORE decompression");
+    }
+};
+exports.DEFLATE = __nccwpck_require__(4015);
+
+
+/***/ }),
+
+/***/ 6653:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+
+
+var utils = __nccwpck_require__(530);
+
+/**
+ * The following functions come from pako, from pako/lib/zlib/crc32.js
+ * released under the MIT license, see pako https://github.com/nodeca/pako/
+ */
+
+// Use ordinary array, since untyped makes no boost here
+function makeTable() {
+    var c, table = [];
+
+    for(var n =0; n < 256; n++){
+        c = n;
+        for(var k =0; k < 8; k++){
+            c = ((c&1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1));
+        }
+        table[n] = c;
+    }
+
+    return table;
+}
+
+// Create table on load. Just 255 signed longs. Not a problem.
+var crcTable = makeTable();
+
+
+function crc32(crc, buf, len, pos) {
+    var t = crcTable, end = pos + len;
+
+    crc = crc ^ (-1);
+
+    for (var i = pos; i < end; i++ ) {
+        crc = (crc >>> 8) ^ t[(crc ^ buf[i]) & 0xFF];
+    }
+
+    return (crc ^ (-1)); // >>> 0;
+}
+
+// That's all for the pako functions.
+
+/**
+ * Compute the crc32 of a string.
+ * This is almost the same as the function crc32, but for strings. Using the
+ * same function for the two use cases leads to horrible performances.
+ * @param {Number} crc the starting value of the crc.
+ * @param {String} str the string to use.
+ * @param {Number} len the length of the string.
+ * @param {Number} pos the starting position for the crc32 computation.
+ * @return {Number} the computed crc32.
+ */
+function crc32str(crc, str, len, pos) {
+    var t = crcTable, end = pos + len;
+
+    crc = crc ^ (-1);
+
+    for (var i = pos; i < end; i++ ) {
+        crc = (crc >>> 8) ^ t[(crc ^ str.charCodeAt(i)) & 0xFF];
+    }
+
+    return (crc ^ (-1)); // >>> 0;
+}
+
+module.exports = function crc32wrapper(input, crc) {
+    if (typeof input === "undefined" || !input.length) {
+        return 0;
+    }
+
+    var isArray = utils.getTypeOf(input) !== "string";
+
+    if(isArray) {
+        return crc32(crc|0, input, input.length, 0);
+    } else {
+        return crc32str(crc|0, input, input.length, 0);
+    }
+};
+
+
+/***/ }),
+
+/***/ 1839:
+/***/ ((__unused_webpack_module, exports) => {
+
+
+exports.base64 = false;
+exports.binary = false;
+exports.dir = false;
+exports.createFolders = true;
+exports.date = null;
+exports.compression = null;
+exports.compressionOptions = null;
+exports.comment = null;
+exports.unixPermissions = null;
+exports.dosPermissions = null;
+
+
+/***/ }),
+
+/***/ 4009:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+/* global Promise */
+
+
+// load the global object first:
+// - it should be better integrated in the system (unhandledRejection in node)
+// - the environment may have a custom Promise implementation (see zone.js)
+var ES6Promise = null;
+if (typeof Promise !== "undefined") {
+    ES6Promise = Promise;
+} else {
+    ES6Promise = __nccwpck_require__(684);
+}
+
+/**
+ * Let the user use/change some implementations.
+ */
+module.exports = {
+    Promise: ES6Promise
+};
+
+
+/***/ }),
+
+/***/ 4015:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+
+var USE_TYPEDARRAY = (typeof Uint8Array !== 'undefined') && (typeof Uint16Array !== 'undefined') && (typeof Uint32Array !== 'undefined');
+
+var pako = __nccwpck_require__(7728);
+var utils = __nccwpck_require__(530);
+var GenericWorker = __nccwpck_require__(7518);
+
+var ARRAY_TYPE = USE_TYPEDARRAY ? "uint8array" : "array";
+
+exports.magic = "\x08\x00";
+
+/**
+ * Create a worker that uses pako to inflate/deflate.
+ * @constructor
+ * @param {String} action the name of the pako function to call : either "Deflate" or "Inflate".
+ * @param {Object} options the options to use when (de)compressing.
+ */
+function FlateWorker(action, options) {
+    GenericWorker.call(this, "FlateWorker/" + action);
+
+    this._pako = null;
+    this._pakoAction = action;
+    this._pakoOptions = options;
+    // the `meta` object from the last chunk received
+    // this allow this worker to pass around metadata
+    this.meta = {};
+}
+
+utils.inherits(FlateWorker, GenericWorker);
+
+/**
+ * @see GenericWorker.processChunk
+ */
+FlateWorker.prototype.processChunk = function (chunk) {
+    this.meta = chunk.meta;
+    if (this._pako === null) {
+        this._createPako();
+    }
+    this._pako.push(utils.transformTo(ARRAY_TYPE, chunk.data), false);
+};
+
+/**
+ * @see GenericWorker.flush
+ */
+FlateWorker.prototype.flush = function () {
+    GenericWorker.prototype.flush.call(this);
+    if (this._pako === null) {
+        this._createPako();
+    }
+    this._pako.push([], true);
+};
+/**
+ * @see GenericWorker.cleanUp
+ */
+FlateWorker.prototype.cleanUp = function () {
+    GenericWorker.prototype.cleanUp.call(this);
+    this._pako = null;
+};
+
+/**
+ * Create the _pako object.
+ * TODO: lazy-loading this object isn't the best solution but it's the
+ * quickest. The best solution is to lazy-load the worker list. See also the
+ * issue #446.
+ */
+FlateWorker.prototype._createPako = function () {
+    this._pako = new pako[this._pakoAction]({
+        raw: true,
+        level: this._pakoOptions.level || -1 // default compression
+    });
+    var self = this;
+    this._pako.onData = function(data) {
+        self.push({
+            data : data,
+            meta : self.meta
+        });
+    };
+};
+
+exports.compressWorker = function (compressionOptions) {
+    return new FlateWorker("Deflate", compressionOptions);
+};
+exports.uncompressWorker = function () {
+    return new FlateWorker("Inflate", {});
+};
+
+
+/***/ }),
+
+/***/ 9254:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+
+
+var utils = __nccwpck_require__(530);
+var GenericWorker = __nccwpck_require__(7518);
+var utf8 = __nccwpck_require__(7643);
+var crc32 = __nccwpck_require__(6653);
+var signature = __nccwpck_require__(7119);
+
+/**
+ * Transform an integer into a string in hexadecimal.
+ * @private
+ * @param {number} dec the number to convert.
+ * @param {number} bytes the number of bytes to generate.
+ * @returns {string} the result.
+ */
+var decToHex = function(dec, bytes) {
+    var hex = "", i;
+    for (i = 0; i < bytes; i++) {
+        hex += String.fromCharCode(dec & 0xff);
+        dec = dec >>> 8;
+    }
+    return hex;
+};
+
+/**
+ * Generate the UNIX part of the external file attributes.
+ * @param {Object} unixPermissions the unix permissions or null.
+ * @param {Boolean} isDir true if the entry is a directory, false otherwise.
+ * @return {Number} a 32 bit integer.
+ *
+ * adapted from http://unix.stackexchange.com/questions/14705/the-zip-formats-external-file-attribute :
+ *
+ * TTTTsstrwxrwxrwx0000000000ADVSHR
+ * ^^^^____________________________ file type, see zipinfo.c (UNX_*)
+ *     ^^^_________________________ setuid, setgid, sticky
+ *        ^^^^^^^^^________________ permissions
+ *                 ^^^^^^^^^^______ not used ?
+ *                           ^^^^^^ DOS attribute bits : Archive, Directory, Volume label, System file, Hidden, Read only
+ */
+var generateUnixExternalFileAttr = function (unixPermissions, isDir) {
+
+    var result = unixPermissions;
+    if (!unixPermissions) {
+        // I can't use octal values in strict mode, hence the hexa.
+        //  040775 => 0x41fd
+        // 0100664 => 0x81b4
+        result = isDir ? 0x41fd : 0x81b4;
+    }
+    return (result & 0xFFFF) << 16;
+};
+
+/**
+ * Generate the DOS part of the external file attributes.
+ * @param {Object} dosPermissions the dos permissions or null.
+ * @param {Boolean} isDir true if the entry is a directory, false otherwise.
+ * @return {Number} a 32 bit integer.
+ *
+ * Bit 0     Read-Only
+ * Bit 1     Hidden
+ * Bit 2     System
+ * Bit 3     Volume Label
+ * Bit 4     Directory
+ * Bit 5     Archive
+ */
+var generateDosExternalFileAttr = function (dosPermissions, isDir) {
+
+    // the dir flag is already set for compatibility
+    return (dosPermissions || 0)  & 0x3F;
+};
+
+/**
+ * Generate the various parts used in the construction of the final zip file.
+ * @param {Object} streamInfo the hash with information about the compressed file.
+ * @param {Boolean} streamedContent is the content streamed ?
+ * @param {Boolean} streamingEnded is the stream finished ?
+ * @param {number} offset the current offset from the start of the zip file.
+ * @param {String} platform let's pretend we are this platform (change platform dependents fields)
+ * @param {Function} encodeFileName the function to encode the file name / comment.
+ * @return {Object} the zip parts.
+ */
+var generateZipParts = function(streamInfo, streamedContent, streamingEnded, offset, platform, encodeFileName) {
+    var file = streamInfo['file'],
+    compression = streamInfo['compression'],
+    useCustomEncoding = encodeFileName !== utf8.utf8encode,
+    encodedFileName = utils.transformTo("string", encodeFileName(file.name)),
+    utfEncodedFileName = utils.transformTo("string", utf8.utf8encode(file.name)),
+    comment = file.comment,
+    encodedComment = utils.transformTo("string", encodeFileName(comment)),
+    utfEncodedComment = utils.transformTo("string", utf8.utf8encode(comment)),
+    useUTF8ForFileName = utfEncodedFileName.length !== file.name.length,
+    useUTF8ForComment = utfEncodedComment.length !== comment.length,
+    dosTime,
+    dosDate,
+    extraFields = "",
+    unicodePathExtraField = "",
+    unicodeCommentExtraField = "",
+    dir = file.dir,
+    date = file.date;
+
+
+    var dataInfo = {
+        crc32 : 0,
+        compressedSize : 0,
+        uncompressedSize : 0
+    };
+
+    // if the content is streamed, the sizes/crc32 are only available AFTER
+    // the end of the stream.
+    if (!streamedContent || streamingEnded) {
+        dataInfo.crc32 = streamInfo['crc32'];
+        dataInfo.compressedSize = streamInfo['compressedSize'];
+        dataInfo.uncompressedSize = streamInfo['uncompressedSize'];
+    }
+
+    var bitflag = 0;
+    if (streamedContent) {
+        // Bit 3: the sizes/crc32 are set to zero in the local header.
+        // The correct values are put in the data descriptor immediately
+        // following the compressed data.
+        bitflag |= 0x0008;
+    }
+    if (!useCustomEncoding && (useUTF8ForFileName || useUTF8ForComment)) {
+        // Bit 11: Language encoding flag (EFS).
+        bitflag |= 0x0800;
+    }
+
+
+    var extFileAttr = 0;
+    var versionMadeBy = 0;
+    if (dir) {
+        // dos or unix, we set the dos dir flag
+        extFileAttr |= 0x00010;
+    }
+    if(platform === "UNIX") {
+        versionMadeBy = 0x031E; // UNIX, version 3.0
+        extFileAttr |= generateUnixExternalFileAttr(file.unixPermissions, dir);
+    } else { // DOS or other, fallback to DOS
+        versionMadeBy = 0x0014; // DOS, version 2.0
+        extFileAttr |= generateDosExternalFileAttr(file.dosPermissions, dir);
+    }
+
+    // date
+    // @see http://www.delorie.com/djgpp/doc/rbinter/it/52/13.html
+    // @see http://www.delorie.com/djgpp/doc/rbinter/it/65/16.html
+    // @see http://www.delorie.com/djgpp/doc/rbinter/it/66/16.html
+
+    dosTime = date.getUTCHours();
+    dosTime = dosTime << 6;
+    dosTime = dosTime | date.getUTCMinutes();
+    dosTime = dosTime << 5;
+    dosTime = dosTime | date.getUTCSeconds() / 2;
+
+    dosDate = date.getUTCFullYear() - 1980;
+    dosDate = dosDate << 4;
+    dosDate = dosDate | (date.getUTCMonth() + 1);
+    dosDate = dosDate << 5;
+    dosDate = dosDate | date.getUTCDate();
+
+    if (useUTF8ForFileName) {
+        // set the unicode path extra field. unzip needs at least one extra
+        // field to correctly handle unicode path, so using the path is as good
+        // as any other information. This could improve the situation with
+        // other archive managers too.
+        // This field is usually used without the utf8 flag, with a non
+        // unicode path in the header (winrar, winzip). This helps (a bit)
+        // with the messy Windows' default compressed folders feature but
+        // breaks on p7zip which doesn't seek the unicode path extra field.
+        // So for now, UTF-8 everywhere !
+        unicodePathExtraField =
+            // Version
+            decToHex(1, 1) +
+            // NameCRC32
+            decToHex(crc32(encodedFileName), 4) +
+            // UnicodeName
+            utfEncodedFileName;
+
+        extraFields +=
+            // Info-ZIP Unicode Path Extra Field
+            "\x75\x70" +
+            // size
+            decToHex(unicodePathExtraField.length, 2) +
+            // content
+            unicodePathExtraField;
+    }
+
+    if(useUTF8ForComment) {
+
+        unicodeCommentExtraField =
+            // Version
+            decToHex(1, 1) +
+            // CommentCRC32
+            decToHex(crc32(encodedComment), 4) +
+            // UnicodeName
+            utfEncodedComment;
+
+        extraFields +=
+            // Info-ZIP Unicode Path Extra Field
+            "\x75\x63" +
+            // size
+            decToHex(unicodeCommentExtraField.length, 2) +
+            // content
+            unicodeCommentExtraField;
+    }
+
+    var header = "";
+
+    // version needed to extract
+    header += "\x0A\x00";
+    // general purpose bit flag
+    header += decToHex(bitflag, 2);
+    // compression method
+    header += compression.magic;
+    // last mod file time
+    header += decToHex(dosTime, 2);
+    // last mod file date
+    header += decToHex(dosDate, 2);
+    // crc-32
+    header += decToHex(dataInfo.crc32, 4);
+    // compressed size
+    header += decToHex(dataInfo.compressedSize, 4);
+    // uncompressed size
+    header += decToHex(dataInfo.uncompressedSize, 4);
+    // file name length
+    header += decToHex(encodedFileName.length, 2);
+    // extra field length
+    header += decToHex(extraFields.length, 2);
+
+
+    var fileRecord = signature.LOCAL_FILE_HEADER + header + encodedFileName + extraFields;
+
+    var dirRecord = signature.CENTRAL_FILE_HEADER +
+        // version made by (00: DOS)
+        decToHex(versionMadeBy, 2) +
+        // file header (common to file and central directory)
+        header +
+        // file comment length
+        decToHex(encodedComment.length, 2) +
+        // disk number start
+        "\x00\x00" +
+        // internal file attributes TODO
+        "\x00\x00" +
+        // external file attributes
+        decToHex(extFileAttr, 4) +
+        // relative offset of local header
+        decToHex(offset, 4) +
+        // file name
+        encodedFileName +
+        // extra field
+        extraFields +
+        // file comment
+        encodedComment;
+
+    return {
+        fileRecord: fileRecord,
+        dirRecord: dirRecord
+    };
+};
+
+/**
+ * Generate the EOCD record.
+ * @param {Number} entriesCount the number of entries in the zip file.
+ * @param {Number} centralDirLength the length (in bytes) of the central dir.
+ * @param {Number} localDirLength the length (in bytes) of the local dir.
+ * @param {String} comment the zip file comment as a binary string.
+ * @param {Function} encodeFileName the function to encode the comment.
+ * @return {String} the EOCD record.
+ */
+var generateCentralDirectoryEnd = function (entriesCount, centralDirLength, localDirLength, comment, encodeFileName) {
+    var dirEnd = "";
+    var encodedComment = utils.transformTo("string", encodeFileName(comment));
+
+    // end of central dir signature
+    dirEnd = signature.CENTRAL_DIRECTORY_END +
+        // number of this disk
+        "\x00\x00" +
+        // number of the disk with the start of the central directory
+        "\x00\x00" +
+        // total number of entries in the central directory on this disk
+        decToHex(entriesCount, 2) +
+        // total number of entries in the central directory
+        decToHex(entriesCount, 2) +
+        // size of the central directory   4 bytes
+        decToHex(centralDirLength, 4) +
+        // offset of start of central directory with respect to the starting disk number
+        decToHex(localDirLength, 4) +
+        // .ZIP file comment length
+        decToHex(encodedComment.length, 2) +
+        // .ZIP file comment
+        encodedComment;
+
+    return dirEnd;
+};
+
+/**
+ * Generate data descriptors for a file entry.
+ * @param {Object} streamInfo the hash generated by a worker, containing information
+ * on the file entry.
+ * @return {String} the data descriptors.
+ */
+var generateDataDescriptors = function (streamInfo) {
+    var descriptor = "";
+    descriptor = signature.DATA_DESCRIPTOR +
+        // crc-32                          4 bytes
+        decToHex(streamInfo['crc32'], 4) +
+        // compressed size                 4 bytes
+        decToHex(streamInfo['compressedSize'], 4) +
+        // uncompressed size               4 bytes
+        decToHex(streamInfo['uncompressedSize'], 4);
+
+    return descriptor;
+};
+
+
+/**
+ * A worker to concatenate other workers to create a zip file.
+ * @param {Boolean} streamFiles `true` to stream the content of the files,
+ * `false` to accumulate it.
+ * @param {String} comment the comment to use.
+ * @param {String} platform the platform to use, "UNIX" or "DOS".
+ * @param {Function} encodeFileName the function to encode file names and comments.
+ */
+function ZipFileWorker(streamFiles, comment, platform, encodeFileName) {
+    GenericWorker.call(this, "ZipFileWorker");
+    // The number of bytes written so far. This doesn't count accumulated chunks.
+    this.bytesWritten = 0;
+    // The comment of the zip file
+    this.zipComment = comment;
+    // The platform "generating" the zip file.
+    this.zipPlatform = platform;
+    // the function to encode file names and comments.
+    this.encodeFileName = encodeFileName;
+    // Should we stream the content of the files ?
+    this.streamFiles = streamFiles;
+    // If `streamFiles` is false, we will need to accumulate the content of the
+    // files to calculate sizes / crc32 (and write them *before* the content).
+    // This boolean indicates if we are accumulating chunks (it will change a lot
+    // during the lifetime of this worker).
+    this.accumulate = false;
+    // The buffer receiving chunks when accumulating content.
+    this.contentBuffer = [];
+    // The list of generated directory records.
+    this.dirRecords = [];
+    // The offset (in bytes) from the beginning of the zip file for the current source.
+    this.currentSourceOffset = 0;
+    // The total number of entries in this zip file.
+    this.entriesCount = 0;
+    // the name of the file currently being added, null when handling the end of the zip file.
+    // Used for the emitted metadata.
+    this.currentFile = null;
+
+
+
+    this._sources = [];
+}
+utils.inherits(ZipFileWorker, GenericWorker);
+
+/**
+ * @see GenericWorker.push
+ */
+ZipFileWorker.prototype.push = function (chunk) {
+
+    var currentFilePercent = chunk.meta.percent || 0;
+    var entriesCount = this.entriesCount;
+    var remainingFiles = this._sources.length;
+
+    if(this.accumulate) {
+        this.contentBuffer.push(chunk);
+    } else {
+        this.bytesWritten += chunk.data.length;
+
+        GenericWorker.prototype.push.call(this, {
+            data : chunk.data,
+            meta : {
+                currentFile : this.currentFile,
+                percent : entriesCount ? (currentFilePercent + 100 * (entriesCount - remainingFiles - 1)) / entriesCount : 100
+            }
+        });
+    }
+};
+
+/**
+ * The worker started a new source (an other worker).
+ * @param {Object} streamInfo the streamInfo object from the new source.
+ */
+ZipFileWorker.prototype.openedSource = function (streamInfo) {
+    this.currentSourceOffset = this.bytesWritten;
+    this.currentFile = streamInfo['file'].name;
+
+    var streamedContent = this.streamFiles && !streamInfo['file'].dir;
+
+    // don't stream folders (because they don't have any content)
+    if(streamedContent) {
+        var record = generateZipParts(streamInfo, streamedContent, false, this.currentSourceOffset, this.zipPlatform, this.encodeFileName);
+        this.push({
+            data : record.fileRecord,
+            meta : {percent:0}
+        });
+    } else {
+        // we need to wait for the whole file before pushing anything
+        this.accumulate = true;
+    }
+};
+
+/**
+ * The worker finished a source (an other worker).
+ * @param {Object} streamInfo the streamInfo object from the finished source.
+ */
+ZipFileWorker.prototype.closedSource = function (streamInfo) {
+    this.accumulate = false;
+    var streamedContent = this.streamFiles && !streamInfo['file'].dir;
+    var record = generateZipParts(streamInfo, streamedContent, true, this.currentSourceOffset, this.zipPlatform, this.encodeFileName);
+
+    this.dirRecords.push(record.dirRecord);
+    if(streamedContent) {
+        // after the streamed file, we put data descriptors
+        this.push({
+            data : generateDataDescriptors(streamInfo),
+            meta : {percent:100}
+        });
+    } else {
+        // the content wasn't streamed, we need to push everything now
+        // first the file record, then the content
+        this.push({
+            data : record.fileRecord,
+            meta : {percent:0}
+        });
+        while(this.contentBuffer.length) {
+            this.push(this.contentBuffer.shift());
+        }
+    }
+    this.currentFile = null;
+};
+
+/**
+ * @see GenericWorker.flush
+ */
+ZipFileWorker.prototype.flush = function () {
+
+    var localDirLength = this.bytesWritten;
+    for(var i = 0; i < this.dirRecords.length; i++) {
+        this.push({
+            data : this.dirRecords[i],
+            meta : {percent:100}
+        });
+    }
+    var centralDirLength = this.bytesWritten - localDirLength;
+
+    var dirEnd = generateCentralDirectoryEnd(this.dirRecords.length, centralDirLength, localDirLength, this.zipComment, this.encodeFileName);
+
+    this.push({
+        data : dirEnd,
+        meta : {percent:100}
+    });
+};
+
+/**
+ * Prepare the next source to be read.
+ */
+ZipFileWorker.prototype.prepareNextSource = function () {
+    this.previous = this._sources.shift();
+    this.openedSource(this.previous.streamInfo);
+    if (this.isPaused) {
+        this.previous.pause();
+    } else {
+        this.previous.resume();
+    }
+};
+
+/**
+ * @see GenericWorker.registerPrevious
+ */
+ZipFileWorker.prototype.registerPrevious = function (previous) {
+    this._sources.push(previous);
+    var self = this;
+
+    previous.on('data', function (chunk) {
+        self.processChunk(chunk);
+    });
+    previous.on('end', function () {
+        self.closedSource(self.previous.streamInfo);
+        if(self._sources.length) {
+            self.prepareNextSource();
+        } else {
+            self.end();
+        }
+    });
+    previous.on('error', function (e) {
+        self.error(e);
+    });
+    return this;
+};
+
+/**
+ * @see GenericWorker.resume
+ */
+ZipFileWorker.prototype.resume = function () {
+    if(!GenericWorker.prototype.resume.call(this)) {
+        return false;
+    }
+
+    if (!this.previous && this._sources.length) {
+        this.prepareNextSource();
+        return true;
+    }
+    if (!this.previous && !this._sources.length && !this.generatedError) {
+        this.end();
+        return true;
+    }
+};
+
+/**
+ * @see GenericWorker.error
+ */
+ZipFileWorker.prototype.error = function (e) {
+    var sources = this._sources;
+    if(!GenericWorker.prototype.error.call(this, e)) {
+        return false;
+    }
+    for(var i = 0; i < sources.length; i++) {
+        try {
+            sources[i].error(e);
+        } catch(e) {
+            // the `error` exploded, nothing to do
+        }
+    }
+    return true;
+};
+
+/**
+ * @see GenericWorker.lock
+ */
+ZipFileWorker.prototype.lock = function () {
+    GenericWorker.prototype.lock.call(this);
+    var sources = this._sources;
+    for(var i = 0; i < sources.length; i++) {
+        sources[i].lock();
+    }
+};
+
+module.exports = ZipFileWorker;
+
+
+/***/ }),
+
+/***/ 9602:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+
+
+var compressions = __nccwpck_require__(7042);
+var ZipFileWorker = __nccwpck_require__(9254);
+
+/**
+ * Find the compression to use.
+ * @param {String} fileCompression the compression defined at the file level, if any.
+ * @param {String} zipCompression the compression defined at the load() level.
+ * @return {Object} the compression object to use.
+ */
+var getCompression = function (fileCompression, zipCompression) {
+
+    var compressionName = fileCompression || zipCompression;
+    var compression = compressions[compressionName];
+    if (!compression) {
+        throw new Error(compressionName + " is not a valid compression method !");
+    }
+    return compression;
+};
+
+/**
+ * Create a worker to generate a zip file.
+ * @param {JSZip} zip the JSZip instance at the right root level.
+ * @param {Object} options to generate the zip file.
+ * @param {String} comment the comment to use.
+ */
+exports.generateWorker = function (zip, options, comment) {
+
+    var zipFileWorker = new ZipFileWorker(options.streamFiles, comment, options.platform, options.encodeFileName);
+    var entriesCount = 0;
+    try {
+
+        zip.forEach(function (relativePath, file) {
+            entriesCount++;
+            var compression = getCompression(file.options.compression, options.compression);
+            var compressionOptions = file.options.compressionOptions || options.compressionOptions || {};
+            var dir = file.dir, date = file.date;
+
+            file._compressWorker(compression, compressionOptions)
+            .withStreamInfo("file", {
+                name : relativePath,
+                dir : dir,
+                date : date,
+                comment : file.comment || "",
+                unixPermissions : file.unixPermissions,
+                dosPermissions : file.dosPermissions
+            })
+            .pipe(zipFileWorker);
+        });
+        zipFileWorker.entriesCount = entriesCount;
+    } catch (e) {
+        zipFileWorker.error(e);
+    }
+
+    return zipFileWorker;
+};
+
+
+/***/ }),
+
+/***/ 299:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+
+
+/**
+ * Representation a of zip file in js
+ * @constructor
+ */
+function JSZip() {
+    // if this constructor is used without `new`, it adds `new` before itself:
+    if(!(this instanceof JSZip)) {
+        return new JSZip();
+    }
+
+    if(arguments.length) {
+        throw new Error("The constructor with parameters has been removed in JSZip 3.0, please check the upgrade guide.");
+    }
+
+    // object containing the files :
+    // {
+    //   "folder/" : {...},
+    //   "folder/data.txt" : {...}
+    // }
+    // NOTE: we use a null prototype because we do not
+    // want filenames like "toString" coming from a zip file
+    // to overwrite methods and attributes in a normal Object.
+    this.files = Object.create(null);
+
+    this.comment = null;
+
+    // Where we are in the hierarchy
+    this.root = "";
+    this.clone = function() {
+        var newObj = new JSZip();
+        for (var i in this) {
+            if (typeof this[i] !== "function") {
+                newObj[i] = this[i];
+            }
+        }
+        return newObj;
+    };
+}
+JSZip.prototype = __nccwpck_require__(6140);
+JSZip.prototype.loadAsync = __nccwpck_require__(4490);
+JSZip.support = __nccwpck_require__(6964);
+JSZip.defaults = __nccwpck_require__(1839);
+
+// TODO find a better way to handle this version,
+// a require('package.json').version doesn't work with webpack, see #327
+JSZip.version = "3.7.1";
+
+JSZip.loadAsync = function (content, options) {
+    return new JSZip().loadAsync(content, options);
+};
+
+JSZip.external = __nccwpck_require__(4009);
+module.exports = JSZip;
+
+
+/***/ }),
+
+/***/ 4490:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+
+var utils = __nccwpck_require__(530);
+var external = __nccwpck_require__(4009);
+var utf8 = __nccwpck_require__(7643);
+var ZipEntries = __nccwpck_require__(5466);
+var Crc32Probe = __nccwpck_require__(6562);
+var nodejsUtils = __nccwpck_require__(3151);
+
+/**
+ * Check the CRC32 of an entry.
+ * @param {ZipEntry} zipEntry the zip entry to check.
+ * @return {Promise} the result.
+ */
+function checkEntryCRC32(zipEntry) {
+    return new external.Promise(function (resolve, reject) {
+        var worker = zipEntry.decompressed.getContentWorker().pipe(new Crc32Probe());
+        worker.on("error", function (e) {
+            reject(e);
+        })
+            .on("end", function () {
+                if (worker.streamInfo.crc32 !== zipEntry.decompressed.crc32) {
+                    reject(new Error("Corrupted zip : CRC32 mismatch"));
+                } else {
+                    resolve();
+                }
+            })
+            .resume();
+    });
+}
+
+module.exports = function (data, options) {
+    var zip = this;
+    options = utils.extend(options || {}, {
+        base64: false,
+        checkCRC32: false,
+        optimizedBinaryString: false,
+        createFolders: false,
+        decodeFileName: utf8.utf8decode
+    });
+
+    if (nodejsUtils.isNode && nodejsUtils.isStream(data)) {
+        return external.Promise.reject(new Error("JSZip can't accept a stream when loading a zip file."));
+    }
+
+    return utils.prepareContent("the loaded zip file", data, true, options.optimizedBinaryString, options.base64)
+        .then(function (data) {
+            var zipEntries = new ZipEntries(options);
+            zipEntries.load(data);
+            return zipEntries;
+        }).then(function checkCRC32(zipEntries) {
+            var promises = [external.Promise.resolve(zipEntries)];
+            var files = zipEntries.files;
+            if (options.checkCRC32) {
+                for (var i = 0; i < files.length; i++) {
+                    promises.push(checkEntryCRC32(files[i]));
+                }
+            }
+            return external.Promise.all(promises);
+        }).then(function addFiles(results) {
+            var zipEntries = results.shift();
+            var files = zipEntries.files;
+            for (var i = 0; i < files.length; i++) {
+                var input = files[i];
+                zip.file(input.fileNameStr, input.decompressed, {
+                    binary: true,
+                    optimizedBinaryString: true,
+                    date: input.date,
+                    dir: input.dir,
+                    comment: input.fileCommentStr.length ? input.fileCommentStr : null,
+                    unixPermissions: input.unixPermissions,
+                    dosPermissions: input.dosPermissions,
+                    createFolders: options.createFolders
+                });
+            }
+            if (zipEntries.zipComment.length) {
+                zip.comment = zipEntries.zipComment;
+            }
+
+            return zip;
+        });
+};
+
+
+/***/ }),
+
+/***/ 6774:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+
+
+var utils = __nccwpck_require__(530);
+var GenericWorker = __nccwpck_require__(7518);
+
+/**
+ * A worker that use a nodejs stream as source.
+ * @constructor
+ * @param {String} filename the name of the file entry for this stream.
+ * @param {Readable} stream the nodejs stream.
+ */
+function NodejsStreamInputAdapter(filename, stream) {
+    GenericWorker.call(this, "Nodejs stream input adapter for " + filename);
+    this._upstreamEnded = false;
+    this._bindStream(stream);
+}
+
+utils.inherits(NodejsStreamInputAdapter, GenericWorker);
+
+/**
+ * Prepare the stream and bind the callbacks on it.
+ * Do this ASAP on node 0.10 ! A lazy binding doesn't always work.
+ * @param {Stream} stream the nodejs stream to use.
+ */
+NodejsStreamInputAdapter.prototype._bindStream = function (stream) {
+    var self = this;
+    this._stream = stream;
+    stream.pause();
+    stream
+    .on("data", function (chunk) {
+        self.push({
+            data: chunk,
+            meta : {
+                percent : 0
+            }
+        });
+    })
+    .on("error", function (e) {
+        if(self.isPaused) {
+            this.generatedError = e;
+        } else {
+            self.error(e);
+        }
+    })
+    .on("end", function () {
+        if(self.isPaused) {
+            self._upstreamEnded = true;
+        } else {
+            self.end();
+        }
+    });
+};
+NodejsStreamInputAdapter.prototype.pause = function () {
+    if(!GenericWorker.prototype.pause.call(this)) {
+        return false;
+    }
+    this._stream.pause();
+    return true;
+};
+NodejsStreamInputAdapter.prototype.resume = function () {
+    if(!GenericWorker.prototype.resume.call(this)) {
+        return false;
+    }
+
+    if(this._upstreamEnded) {
+        this.end();
+    } else {
+        this._stream.resume();
+    }
+
+    return true;
+};
+
+module.exports = NodejsStreamInputAdapter;
+
+
+/***/ }),
+
+/***/ 374:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+
+
+var Readable = (__nccwpck_require__(3901).Readable);
+
+var utils = __nccwpck_require__(530);
+utils.inherits(NodejsStreamOutputAdapter, Readable);
+
+/**
+* A nodejs stream using a worker as source.
+* @see the SourceWrapper in http://nodejs.org/api/stream.html
+* @constructor
+* @param {StreamHelper} helper the helper wrapping the worker
+* @param {Object} options the nodejs stream options
+* @param {Function} updateCb the update callback.
+*/
+function NodejsStreamOutputAdapter(helper, options, updateCb) {
+    Readable.call(this, options);
+    this._helper = helper;
+
+    var self = this;
+    helper.on("data", function (data, meta) {
+        if (!self.push(data)) {
+            self._helper.pause();
+        }
+        if(updateCb) {
+            updateCb(meta);
+        }
+    })
+    .on("error", function(e) {
+        self.emit('error', e);
+    })
+    .on("end", function () {
+        self.push(null);
+    });
+}
+
+
+NodejsStreamOutputAdapter.prototype._read = function() {
+    this._helper.resume();
+};
+
+module.exports = NodejsStreamOutputAdapter;
+
+
+/***/ }),
+
+/***/ 3151:
+/***/ ((module) => {
+
+
+
+module.exports = {
+    /**
+     * True if this is running in Nodejs, will be undefined in a browser.
+     * In a browser, browserify won't include this file and the whole module
+     * will be resolved an empty object.
+     */
+    isNode : typeof Buffer !== "undefined",
+    /**
+     * Create a new nodejs Buffer from an existing content.
+     * @param {Object} data the data to pass to the constructor.
+     * @param {String} encoding the encoding to use.
+     * @return {Buffer} a new Buffer.
+     */
+    newBufferFrom: function(data, encoding) {
+        if (Buffer.from && Buffer.from !== Uint8Array.from) {
+            return Buffer.from(data, encoding);
+        } else {
+            if (typeof data === "number") {
+                // Safeguard for old Node.js versions. On newer versions,
+                // Buffer.from(number) / Buffer(number, encoding) already throw.
+                throw new Error("The \"data\" argument must not be a number");
+            }
+            return new Buffer(data, encoding);
+        }
+    },
+    /**
+     * Create a new nodejs Buffer with the specified size.
+     * @param {Integer} size the size of the buffer.
+     * @return {Buffer} a new Buffer.
+     */
+    allocBuffer: function (size) {
+        if (Buffer.alloc) {
+            return Buffer.alloc(size);
+        } else {
+            var buf = new Buffer(size);
+            buf.fill(0);
+            return buf;
+        }
+    },
+    /**
+     * Find out if an object is a Buffer.
+     * @param {Object} b the object to test.
+     * @return {Boolean} true if the object is a Buffer, false otherwise.
+     */
+    isBuffer : function(b){
+        return Buffer.isBuffer(b);
+    },
+
+    isStream : function (obj) {
+        return obj &&
+            typeof obj.on === "function" &&
+            typeof obj.pause === "function" &&
+            typeof obj.resume === "function";
+    }
+};
+
+
+/***/ }),
+
+/***/ 6140:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+
+var utf8 = __nccwpck_require__(7643);
+var utils = __nccwpck_require__(530);
+var GenericWorker = __nccwpck_require__(7518);
+var StreamHelper = __nccwpck_require__(6865);
+var defaults = __nccwpck_require__(1839);
+var CompressedObject = __nccwpck_require__(9820);
+var ZipObject = __nccwpck_require__(4091);
+var generate = __nccwpck_require__(9602);
+var nodejsUtils = __nccwpck_require__(3151);
+var NodejsStreamInputAdapter = __nccwpck_require__(6774);
+
+
+/**
+ * Add a file in the current folder.
+ * @private
+ * @param {string} name the name of the file
+ * @param {String|ArrayBuffer|Uint8Array|Buffer} data the data of the file
+ * @param {Object} originalOptions the options of the file
+ * @return {Object} the new file.
+ */
+var fileAdd = function(name, data, originalOptions) {
+    // be sure sub folders exist
+    var dataType = utils.getTypeOf(data),
+        parent;
+
+
+    /*
+     * Correct options.
+     */
+
+    var o = utils.extend(originalOptions || {}, defaults);
+    o.date = o.date || new Date();
+    if (o.compression !== null) {
+        o.compression = o.compression.toUpperCase();
+    }
+
+    if (typeof o.unixPermissions === "string") {
+        o.unixPermissions = parseInt(o.unixPermissions, 8);
+    }
+
+    // UNX_IFDIR  0040000 see zipinfo.c
+    if (o.unixPermissions && (o.unixPermissions & 0x4000)) {
+        o.dir = true;
+    }
+    // Bit 4    Directory
+    if (o.dosPermissions && (o.dosPermissions & 0x0010)) {
+        o.dir = true;
+    }
+
+    if (o.dir) {
+        name = forceTrailingSlash(name);
+    }
+    if (o.createFolders && (parent = parentFolder(name))) {
+        folderAdd.call(this, parent, true);
+    }
+
+    var isUnicodeString = dataType === "string" && o.binary === false && o.base64 === false;
+    if (!originalOptions || typeof originalOptions.binary === "undefined") {
+        o.binary = !isUnicodeString;
+    }
+
+
+    var isCompressedEmpty = (data instanceof CompressedObject) && data.uncompressedSize === 0;
+
+    if (isCompressedEmpty || o.dir || !data || data.length === 0) {
+        o.base64 = false;
+        o.binary = true;
+        data = "";
+        o.compression = "STORE";
+        dataType = "string";
+    }
+
+    /*
+     * Convert content to fit.
+     */
+
+    var zipObjectContent = null;
+    if (data instanceof CompressedObject || data instanceof GenericWorker) {
+        zipObjectContent = data;
+    } else if (nodejsUtils.isNode && nodejsUtils.isStream(data)) {
+        zipObjectContent = new NodejsStreamInputAdapter(name, data);
+    } else {
+        zipObjectContent = utils.prepareContent(name, data, o.binary, o.optimizedBinaryString, o.base64);
+    }
+
+    var object = new ZipObject(name, zipObjectContent, o);
+    this.files[name] = object;
+    /*
+    TODO: we can't throw an exception because we have async promises
+    (we can have a promise of a Date() for example) but returning a
+    promise is useless because file(name, data) returns the JSZip
+    object for chaining. Should we break that to allow the user
+    to catch the error ?
+
+    return external.Promise.resolve(zipObjectContent)
+    .then(function () {
+        return object;
+    });
+    */
+};
+
+/**
+ * Find the parent folder of the path.
+ * @private
+ * @param {string} path the path to use
+ * @return {string} the parent folder, or ""
+ */
+var parentFolder = function (path) {
+    if (path.slice(-1) === '/') {
+        path = path.substring(0, path.length - 1);
+    }
+    var lastSlash = path.lastIndexOf('/');
+    return (lastSlash > 0) ? path.substring(0, lastSlash) : "";
+};
+
+/**
+ * Returns the path with a slash at the end.
+ * @private
+ * @param {String} path the path to check.
+ * @return {String} the path with a trailing slash.
+ */
+var forceTrailingSlash = function(path) {
+    // Check the name ends with a /
+    if (path.slice(-1) !== "/") {
+        path += "/"; // IE doesn't like substr(-1)
+    }
+    return path;
+};
+
+/**
+ * Add a (sub) folder in the current folder.
+ * @private
+ * @param {string} name the folder's name
+ * @param {boolean=} [createFolders] If true, automatically create sub
+ *  folders. Defaults to false.
+ * @return {Object} the new folder.
+ */
+var folderAdd = function(name, createFolders) {
+    createFolders = (typeof createFolders !== 'undefined') ? createFolders : defaults.createFolders;
+
+    name = forceTrailingSlash(name);
+
+    // Does this folder already exist?
+    if (!this.files[name]) {
+        fileAdd.call(this, name, null, {
+            dir: true,
+            createFolders: createFolders
+        });
+    }
+    return this.files[name];
+};
+
+/**
+* Cross-window, cross-Node-context regular expression detection
+* @param  {Object}  object Anything
+* @return {Boolean}        true if the object is a regular expression,
+* false otherwise
+*/
+function isRegExp(object) {
+    return Object.prototype.toString.call(object) === "[object RegExp]";
+}
+
+// return the actual prototype of JSZip
+var out = {
+    /**
+     * @see loadAsync
+     */
+    load: function() {
+        throw new Error("This method has been removed in JSZip 3.0, please check the upgrade guide.");
+    },
+
+
+    /**
+     * Call a callback function for each entry at this folder level.
+     * @param {Function} cb the callback function:
+     * function (relativePath, file) {...}
+     * It takes 2 arguments : the relative path and the file.
+     */
+    forEach: function(cb) {
+        var filename, relativePath, file;
+        /* jshint ignore:start */
+        // ignore warning about unwanted properties because this.files is a null prototype object
+        for (filename in this.files) {
+            file = this.files[filename];
+            relativePath = filename.slice(this.root.length, filename.length);
+            if (relativePath && filename.slice(0, this.root.length) === this.root) { // the file is in the current root
+                cb(relativePath, file); // TODO reverse the parameters ? need to be clean AND consistent with the filter search fn...
+            }
+        }
+        /* jshint ignore:end */
+    },
+
+    /**
+     * Filter nested files/folders with the specified function.
+     * @param {Function} search the predicate to use :
+     * function (relativePath, file) {...}
+     * It takes 2 arguments : the relative path and the file.
+     * @return {Array} An array of matching elements.
+     */
+    filter: function(search) {
+        var result = [];
+        this.forEach(function (relativePath, entry) {
+            if (search(relativePath, entry)) { // the file matches the function
+                result.push(entry);
+            }
+
+        });
+        return result;
+    },
+
+    /**
+     * Add a file to the zip file, or search a file.
+     * @param   {string|RegExp} name The name of the file to add (if data is defined),
+     * the name of the file to find (if no data) or a regex to match files.
+     * @param   {String|ArrayBuffer|Uint8Array|Buffer} data  The file data, either raw or base64 encoded
+     * @param   {Object} o     File options
+     * @return  {JSZip|Object|Array} this JSZip object (when adding a file),
+     * a file (when searching by string) or an array of files (when searching by regex).
+     */
+    file: function(name, data, o) {
+        if (arguments.length === 1) {
+            if (isRegExp(name)) {
+                var regexp = name;
+                return this.filter(function(relativePath, file) {
+                    return !file.dir && regexp.test(relativePath);
+                });
+            }
+            else { // text
+                var obj = this.files[this.root + name];
+                if (obj && !obj.dir) {
+                    return obj;
+                } else {
+                    return null;
+                }
+            }
+        }
+        else { // more than one argument : we have data !
+            name = this.root + name;
+            fileAdd.call(this, name, data, o);
+        }
+        return this;
+    },
+
+    /**
+     * Add a directory to the zip file, or search.
+     * @param   {String|RegExp} arg The name of the directory to add, or a regex to search folders.
+     * @return  {JSZip} an object with the new directory as the root, or an array containing matching folders.
+     */
+    folder: function(arg) {
+        if (!arg) {
+            return this;
+        }
+
+        if (isRegExp(arg)) {
+            return this.filter(function(relativePath, file) {
+                return file.dir && arg.test(relativePath);
+            });
+        }
+
+        // else, name is a new folder
+        var name = this.root + arg;
+        var newFolder = folderAdd.call(this, name);
+
+        // Allow chaining by returning a new object with this folder as the root
+        var ret = this.clone();
+        ret.root = newFolder.name;
+        return ret;
+    },
+
+    /**
+     * Delete a file, or a directory and all sub-files, from the zip
+     * @param {string} name the name of the file to delete
+     * @return {JSZip} this JSZip object
+     */
+    remove: function(name) {
+        name = this.root + name;
+        var file = this.files[name];
+        if (!file) {
+            // Look for any folders
+            if (name.slice(-1) !== "/") {
+                name += "/";
+            }
+            file = this.files[name];
+        }
+
+        if (file && !file.dir) {
+            // file
+            delete this.files[name];
+        } else {
+            // maybe a folder, delete recursively
+            var kids = this.filter(function(relativePath, file) {
+                return file.name.slice(0, name.length) === name;
+            });
+            for (var i = 0; i < kids.length; i++) {
+                delete this.files[kids[i].name];
+            }
+        }
+
+        return this;
+    },
+
+    /**
+     * Generate the complete zip file
+     * @param {Object} options the options to generate the zip file :
+     * - compression, "STORE" by default.
+     * - type, "base64" by default. Values are : string, base64, uint8array, arraybuffer, blob.
+     * @return {String|Uint8Array|ArrayBuffer|Buffer|Blob} the zip file
+     */
+    generate: function(options) {
+        throw new Error("This method has been removed in JSZip 3.0, please check the upgrade guide.");
+    },
+
+    /**
+     * Generate the complete zip file as an internal stream.
+     * @param {Object} options the options to generate the zip file :
+     * - compression, "STORE" by default.
+     * - type, "base64" by default. Values are : string, base64, uint8array, arraybuffer, blob.
+     * @return {StreamHelper} the streamed zip file.
+     */
+    generateInternalStream: function(options) {
+      var worker, opts = {};
+      try {
+          opts = utils.extend(options || {}, {
+              streamFiles: false,
+              compression: "STORE",
+              compressionOptions : null,
+              type: "",
+              platform: "DOS",
+              comment: null,
+              mimeType: 'application/zip',
+              encodeFileName: utf8.utf8encode
+          });
+
+          opts.type = opts.type.toLowerCase();
+          opts.compression = opts.compression.toUpperCase();
+
+          // "binarystring" is preferred but the internals use "string".
+          if(opts.type === "binarystring") {
+            opts.type = "string";
+          }
+
+          if (!opts.type) {
+            throw new Error("No output type specified.");
+          }
+
+          utils.checkSupport(opts.type);
+
+          // accept nodejs `process.platform`
+          if(
+              opts.platform === 'darwin' ||
+              opts.platform === 'freebsd' ||
+              opts.platform === 'linux' ||
+              opts.platform === 'sunos'
+          ) {
+              opts.platform = "UNIX";
+          }
+          if (opts.platform === 'win32') {
+              opts.platform = "DOS";
+          }
+
+          var comment = opts.comment || this.comment || "";
+          worker = generate.generateWorker(this, opts, comment);
+      } catch (e) {
+        worker = new GenericWorker("error");
+        worker.error(e);
+      }
+      return new StreamHelper(worker, opts.type || "string", opts.mimeType);
+    },
+    /**
+     * Generate the complete zip file asynchronously.
+     * @see generateInternalStream
+     */
+    generateAsync: function(options, onUpdate) {
+        return this.generateInternalStream(options).accumulate(onUpdate);
+    },
+    /**
+     * Generate the complete zip file asynchronously.
+     * @see generateInternalStream
+     */
+    generateNodeStream: function(options, onUpdate) {
+        options = options || {};
+        if (!options.type) {
+            options.type = "nodebuffer";
+        }
+        return this.generateInternalStream(options).toNodejsStream(onUpdate);
+    }
+};
+module.exports = out;
+
+
+/***/ }),
+
+/***/ 5408:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+
+var DataReader = __nccwpck_require__(6378);
+var utils = __nccwpck_require__(530);
+
+function ArrayReader(data) {
+    DataReader.call(this, data);
+	for(var i = 0; i < this.data.length; i++) {
+		data[i] = data[i] & 0xFF;
+	}
+}
+utils.inherits(ArrayReader, DataReader);
+/**
+ * @see DataReader.byteAt
+ */
+ArrayReader.prototype.byteAt = function(i) {
+    return this.data[this.zero + i];
+};
+/**
+ * @see DataReader.lastIndexOfSignature
+ */
+ArrayReader.prototype.lastIndexOfSignature = function(sig) {
+    var sig0 = sig.charCodeAt(0),
+        sig1 = sig.charCodeAt(1),
+        sig2 = sig.charCodeAt(2),
+        sig3 = sig.charCodeAt(3);
+    for (var i = this.length - 4; i >= 0; --i) {
+        if (this.data[i] === sig0 && this.data[i + 1] === sig1 && this.data[i + 2] === sig2 && this.data[i + 3] === sig3) {
+            return i - this.zero;
+        }
+    }
+
+    return -1;
+};
+/**
+ * @see DataReader.readAndCheckSignature
+ */
+ArrayReader.prototype.readAndCheckSignature = function (sig) {
+    var sig0 = sig.charCodeAt(0),
+        sig1 = sig.charCodeAt(1),
+        sig2 = sig.charCodeAt(2),
+        sig3 = sig.charCodeAt(3),
+        data = this.readData(4);
+    return sig0 === data[0] && sig1 === data[1] && sig2 === data[2] && sig3 === data[3];
+};
+/**
+ * @see DataReader.readData
+ */
+ArrayReader.prototype.readData = function(size) {
+    this.checkOffset(size);
+    if(size === 0) {
+        return [];
+    }
+    var result = this.data.slice(this.zero + this.index, this.zero + this.index + size);
+    this.index += size;
+    return result;
+};
+module.exports = ArrayReader;
+
+
+/***/ }),
+
+/***/ 6378:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+
+var utils = __nccwpck_require__(530);
+
+function DataReader(data) {
+    this.data = data; // type : see implementation
+    this.length = data.length;
+    this.index = 0;
+    this.zero = 0;
+}
+DataReader.prototype = {
+    /**
+     * Check that the offset will not go too far.
+     * @param {string} offset the additional offset to check.
+     * @throws {Error} an Error if the offset is out of bounds.
+     */
+    checkOffset: function(offset) {
+        this.checkIndex(this.index + offset);
+    },
+    /**
+     * Check that the specified index will not be too far.
+     * @param {string} newIndex the index to check.
+     * @throws {Error} an Error if the index is out of bounds.
+     */
+    checkIndex: function(newIndex) {
+        if (this.length < this.zero + newIndex || newIndex < 0) {
+            throw new Error("End of data reached (data length = " + this.length + ", asked index = " + (newIndex) + "). Corrupted zip ?");
+        }
+    },
+    /**
+     * Change the index.
+     * @param {number} newIndex The new index.
+     * @throws {Error} if the new index is out of the data.
+     */
+    setIndex: function(newIndex) {
+        this.checkIndex(newIndex);
+        this.index = newIndex;
+    },
+    /**
+     * Skip the next n bytes.
+     * @param {number} n the number of bytes to skip.
+     * @throws {Error} if the new index is out of the data.
+     */
+    skip: function(n) {
+        this.setIndex(this.index + n);
+    },
+    /**
+     * Get the byte at the specified index.
+     * @param {number} i the index to use.
+     * @return {number} a byte.
+     */
+    byteAt: function(i) {
+        // see implementations
+    },
+    /**
+     * Get the next number with a given byte size.
+     * @param {number} size the number of bytes to read.
+     * @return {number} the corresponding number.
+     */
+    readInt: function(size) {
+        var result = 0,
+            i;
+        this.checkOffset(size);
+        for (i = this.index + size - 1; i >= this.index; i--) {
+            result = (result << 8) + this.byteAt(i);
+        }
+        this.index += size;
+        return result;
+    },
+    /**
+     * Get the next string with a given byte size.
+     * @param {number} size the number of bytes to read.
+     * @return {string} the corresponding string.
+     */
+    readString: function(size) {
+        return utils.transformTo("string", this.readData(size));
+    },
+    /**
+     * Get raw data without conversion, <size> bytes.
+     * @param {number} size the number of bytes to read.
+     * @return {Object} the raw data, implementation specific.
+     */
+    readData: function(size) {
+        // see implementations
+    },
+    /**
+     * Find the last occurrence of a zip signature (4 bytes).
+     * @param {string} sig the signature to find.
+     * @return {number} the index of the last occurrence, -1 if not found.
+     */
+    lastIndexOfSignature: function(sig) {
+        // see implementations
+    },
+    /**
+     * Read the signature (4 bytes) at the current position and compare it with sig.
+     * @param {string} sig the expected signature
+     * @return {boolean} true if the signature matches, false otherwise.
+     */
+    readAndCheckSignature: function(sig) {
+        // see implementations
+    },
+    /**
+     * Get the next date.
+     * @return {Date} the date.
+     */
+    readDate: function() {
+        var dostime = this.readInt(4);
+        return new Date(Date.UTC(
+        ((dostime >> 25) & 0x7f) + 1980, // year
+        ((dostime >> 21) & 0x0f) - 1, // month
+        (dostime >> 16) & 0x1f, // day
+        (dostime >> 11) & 0x1f, // hour
+        (dostime >> 5) & 0x3f, // minute
+        (dostime & 0x1f) << 1)); // second
+    }
+};
+module.exports = DataReader;
+
+
+/***/ }),
+
+/***/ 4182:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+
+var Uint8ArrayReader = __nccwpck_require__(9855);
+var utils = __nccwpck_require__(530);
+
+function NodeBufferReader(data) {
+    Uint8ArrayReader.call(this, data);
+}
+utils.inherits(NodeBufferReader, Uint8ArrayReader);
+
+/**
+ * @see DataReader.readData
+ */
+NodeBufferReader.prototype.readData = function(size) {
+    this.checkOffset(size);
+    var result = this.data.slice(this.zero + this.index, this.zero + this.index + size);
+    this.index += size;
+    return result;
+};
+module.exports = NodeBufferReader;
+
+
+/***/ }),
+
+/***/ 3172:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+
+var DataReader = __nccwpck_require__(6378);
+var utils = __nccwpck_require__(530);
+
+function StringReader(data) {
+    DataReader.call(this, data);
+}
+utils.inherits(StringReader, DataReader);
+/**
+ * @see DataReader.byteAt
+ */
+StringReader.prototype.byteAt = function(i) {
+    return this.data.charCodeAt(this.zero + i);
+};
+/**
+ * @see DataReader.lastIndexOfSignature
+ */
+StringReader.prototype.lastIndexOfSignature = function(sig) {
+    return this.data.lastIndexOf(sig) - this.zero;
+};
+/**
+ * @see DataReader.readAndCheckSignature
+ */
+StringReader.prototype.readAndCheckSignature = function (sig) {
+    var data = this.readData(4);
+    return sig === data;
+};
+/**
+ * @see DataReader.readData
+ */
+StringReader.prototype.readData = function(size) {
+    this.checkOffset(size);
+    // this will work because the constructor applied the "& 0xff" mask.
+    var result = this.data.slice(this.zero + this.index, this.zero + this.index + size);
+    this.index += size;
+    return result;
+};
+module.exports = StringReader;
+
+
+/***/ }),
+
+/***/ 9855:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+
+var ArrayReader = __nccwpck_require__(5408);
+var utils = __nccwpck_require__(530);
+
+function Uint8ArrayReader(data) {
+    ArrayReader.call(this, data);
+}
+utils.inherits(Uint8ArrayReader, ArrayReader);
+/**
+ * @see DataReader.readData
+ */
+Uint8ArrayReader.prototype.readData = function(size) {
+    this.checkOffset(size);
+    if(size === 0) {
+        // in IE10, when using subarray(idx, idx), we get the array [0x00] instead of [].
+        return new Uint8Array(0);
+    }
+    var result = this.data.subarray(this.zero + this.index, this.zero + this.index + size);
+    this.index += size;
+    return result;
+};
+module.exports = Uint8ArrayReader;
+
+
+/***/ }),
+
+/***/ 2322:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+
+
+var utils = __nccwpck_require__(530);
+var support = __nccwpck_require__(6964);
+var ArrayReader = __nccwpck_require__(5408);
+var StringReader = __nccwpck_require__(3172);
+var NodeBufferReader = __nccwpck_require__(4182);
+var Uint8ArrayReader = __nccwpck_require__(9855);
+
+/**
+ * Create a reader adapted to the data.
+ * @param {String|ArrayBuffer|Uint8Array|Buffer} data the data to read.
+ * @return {DataReader} the data reader.
+ */
+module.exports = function (data) {
+    var type = utils.getTypeOf(data);
+    utils.checkSupport(type);
+    if (type === "string" && !support.uint8array) {
+        return new StringReader(data);
+    }
+    if (type === "nodebuffer") {
+        return new NodeBufferReader(data);
+    }
+    if (support.uint8array) {
+        return new Uint8ArrayReader(utils.transformTo("uint8array", data));
+    }
+    return new ArrayReader(utils.transformTo("array", data));
+};
+
+
+/***/ }),
+
+/***/ 7119:
+/***/ ((__unused_webpack_module, exports) => {
+
+
+exports.LOCAL_FILE_HEADER = "PK\x03\x04";
+exports.CENTRAL_FILE_HEADER = "PK\x01\x02";
+exports.CENTRAL_DIRECTORY_END = "PK\x05\x06";
+exports.ZIP64_CENTRAL_DIRECTORY_LOCATOR = "PK\x06\x07";
+exports.ZIP64_CENTRAL_DIRECTORY_END = "PK\x06\x06";
+exports.DATA_DESCRIPTOR = "PK\x07\x08";
+
+
+/***/ }),
+
+/***/ 2606:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+
+
+var GenericWorker = __nccwpck_require__(7518);
+var utils = __nccwpck_require__(530);
+
+/**
+ * A worker which convert chunks to a specified type.
+ * @constructor
+ * @param {String} destType the destination type.
+ */
+function ConvertWorker(destType) {
+    GenericWorker.call(this, "ConvertWorker to " + destType);
+    this.destType = destType;
+}
+utils.inherits(ConvertWorker, GenericWorker);
+
+/**
+ * @see GenericWorker.processChunk
+ */
+ConvertWorker.prototype.processChunk = function (chunk) {
+    this.push({
+        data : utils.transformTo(this.destType, chunk.data),
+        meta : chunk.meta
+    });
+};
+module.exports = ConvertWorker;
+
+
+/***/ }),
+
+/***/ 6562:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+
+
+var GenericWorker = __nccwpck_require__(7518);
+var crc32 = __nccwpck_require__(6653);
+var utils = __nccwpck_require__(530);
+
+/**
+ * A worker which calculate the crc32 of the data flowing through.
+ * @constructor
+ */
+function Crc32Probe() {
+    GenericWorker.call(this, "Crc32Probe");
+    this.withStreamInfo("crc32", 0);
+}
+utils.inherits(Crc32Probe, GenericWorker);
+
+/**
+ * @see GenericWorker.processChunk
+ */
+Crc32Probe.prototype.processChunk = function (chunk) {
+    this.streamInfo.crc32 = crc32(chunk.data, this.streamInfo.crc32 || 0);
+    this.push(chunk);
+};
+module.exports = Crc32Probe;
+
+
+/***/ }),
+
+/***/ 508:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+
+
+var utils = __nccwpck_require__(530);
+var GenericWorker = __nccwpck_require__(7518);
+
+/**
+ * A worker which calculate the total length of the data flowing through.
+ * @constructor
+ * @param {String} propName the name used to expose the length
+ */
+function DataLengthProbe(propName) {
+    GenericWorker.call(this, "DataLengthProbe for " + propName);
+    this.propName = propName;
+    this.withStreamInfo(propName, 0);
+}
+utils.inherits(DataLengthProbe, GenericWorker);
+
+/**
+ * @see GenericWorker.processChunk
+ */
+DataLengthProbe.prototype.processChunk = function (chunk) {
+    if(chunk) {
+        var length = this.streamInfo[this.propName] || 0;
+        this.streamInfo[this.propName] = length + chunk.data.length;
+    }
+    GenericWorker.prototype.processChunk.call(this, chunk);
+};
+module.exports = DataLengthProbe;
+
+
+
+/***/ }),
+
+/***/ 4538:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+
+
+var utils = __nccwpck_require__(530);
+var GenericWorker = __nccwpck_require__(7518);
+
+// the size of the generated chunks
+// TODO expose this as a public variable
+var DEFAULT_BLOCK_SIZE = 16 * 1024;
+
+/**
+ * A worker that reads a content and emits chunks.
+ * @constructor
+ * @param {Promise} dataP the promise of the data to split
+ */
+function DataWorker(dataP) {
+    GenericWorker.call(this, "DataWorker");
+    var self = this;
+    this.dataIsReady = false;
+    this.index = 0;
+    this.max = 0;
+    this.data = null;
+    this.type = "";
+
+    this._tickScheduled = false;
+
+    dataP.then(function (data) {
+        self.dataIsReady = true;
+        self.data = data;
+        self.max = data && data.length || 0;
+        self.type = utils.getTypeOf(data);
+        if(!self.isPaused) {
+            self._tickAndRepeat();
+        }
+    }, function (e) {
+        self.error(e);
+    });
+}
+
+utils.inherits(DataWorker, GenericWorker);
+
+/**
+ * @see GenericWorker.cleanUp
+ */
+DataWorker.prototype.cleanUp = function () {
+    GenericWorker.prototype.cleanUp.call(this);
+    this.data = null;
+};
+
+/**
+ * @see GenericWorker.resume
+ */
+DataWorker.prototype.resume = function () {
+    if(!GenericWorker.prototype.resume.call(this)) {
+        return false;
+    }
+
+    if (!this._tickScheduled && this.dataIsReady) {
+        this._tickScheduled = true;
+        utils.delay(this._tickAndRepeat, [], this);
+    }
+    return true;
+};
+
+/**
+ * Trigger a tick a schedule an other call to this function.
+ */
+DataWorker.prototype._tickAndRepeat = function() {
+    this._tickScheduled = false;
+    if(this.isPaused || this.isFinished) {
+        return;
+    }
+    this._tick();
+    if(!this.isFinished) {
+        utils.delay(this._tickAndRepeat, [], this);
+        this._tickScheduled = true;
+    }
+};
+
+/**
+ * Read and push a chunk.
+ */
+DataWorker.prototype._tick = function() {
+
+    if(this.isPaused || this.isFinished) {
+        return false;
+    }
+
+    var size = DEFAULT_BLOCK_SIZE;
+    var data = null, nextIndex = Math.min(this.max, this.index + size);
+    if (this.index >= this.max) {
+        // EOF
+        return this.end();
+    } else {
+        switch(this.type) {
+            case "string":
+                data = this.data.substring(this.index, nextIndex);
+            break;
+            case "uint8array":
+                data = this.data.subarray(this.index, nextIndex);
+            break;
+            case "array":
+            case "nodebuffer":
+                data = this.data.slice(this.index, nextIndex);
+            break;
+        }
+        this.index = nextIndex;
+        return this.push({
+            data : data,
+            meta : {
+                percent : this.max ? this.index / this.max * 100 : 0
+            }
+        });
+    }
+};
+
+module.exports = DataWorker;
+
+
+/***/ }),
+
+/***/ 7518:
+/***/ ((module) => {
+
+
+
+/**
+ * A worker that does nothing but passing chunks to the next one. This is like
+ * a nodejs stream but with some differences. On the good side :
+ * - it works on IE 6-9 without any issue / polyfill
+ * - it weights less than the full dependencies bundled with browserify
+ * - it forwards errors (no need to declare an error handler EVERYWHERE)
+ *
+ * A chunk is an object with 2 attributes : `meta` and `data`. The former is an
+ * object containing anything (`percent` for example), see each worker for more
+ * details. The latter is the real data (String, Uint8Array, etc).
+ *
+ * @constructor
+ * @param {String} name the name of the stream (mainly used for debugging purposes)
+ */
+function GenericWorker(name) {
+    // the name of the worker
+    this.name = name || "default";
+    // an object containing metadata about the workers chain
+    this.streamInfo = {};
+    // an error which happened when the worker was paused
+    this.generatedError = null;
+    // an object containing metadata to be merged by this worker into the general metadata
+    this.extraStreamInfo = {};
+    // true if the stream is paused (and should not do anything), false otherwise
+    this.isPaused = true;
+    // true if the stream is finished (and should not do anything), false otherwise
+    this.isFinished = false;
+    // true if the stream is locked to prevent further structure updates (pipe), false otherwise
+    this.isLocked = false;
+    // the event listeners
+    this._listeners = {
+        'data':[],
+        'end':[],
+        'error':[]
+    };
+    // the previous worker, if any
+    this.previous = null;
+}
+
+GenericWorker.prototype = {
+    /**
+     * Push a chunk to the next workers.
+     * @param {Object} chunk the chunk to push
+     */
+    push : function (chunk) {
+        this.emit("data", chunk);
+    },
+    /**
+     * End the stream.
+     * @return {Boolean} true if this call ended the worker, false otherwise.
+     */
+    end : function () {
+        if (this.isFinished) {
+            return false;
+        }
+
+        this.flush();
+        try {
+            this.emit("end");
+            this.cleanUp();
+            this.isFinished = true;
+        } catch (e) {
+            this.emit("error", e);
+        }
+        return true;
+    },
+    /**
+     * End the stream with an error.
+     * @param {Error} e the error which caused the premature end.
+     * @return {Boolean} true if this call ended the worker with an error, false otherwise.
+     */
+    error : function (e) {
+        if (this.isFinished) {
+            return false;
+        }
+
+        if(this.isPaused) {
+            this.generatedError = e;
+        } else {
+            this.isFinished = true;
+
+            this.emit("error", e);
+
+            // in the workers chain exploded in the middle of the chain,
+            // the error event will go downward but we also need to notify
+            // workers upward that there has been an error.
+            if(this.previous) {
+                this.previous.error(e);
+            }
+
+            this.cleanUp();
+        }
+        return true;
+    },
+    /**
+     * Add a callback on an event.
+     * @param {String} name the name of the event (data, end, error)
+     * @param {Function} listener the function to call when the event is triggered
+     * @return {GenericWorker} the current object for chainability
+     */
+    on : function (name, listener) {
+        this._listeners[name].push(listener);
+        return this;
+    },
+    /**
+     * Clean any references when a worker is ending.
+     */
+    cleanUp : function () {
+        this.streamInfo = this.generatedError = this.extraStreamInfo = null;
+        this._listeners = [];
+    },
+    /**
+     * Trigger an event. This will call registered callback with the provided arg.
+     * @param {String} name the name of the event (data, end, error)
+     * @param {Object} arg the argument to call the callback with.
+     */
+    emit : function (name, arg) {
+        if (this._listeners[name]) {
+            for(var i = 0; i < this._listeners[name].length; i++) {
+                this._listeners[name][i].call(this, arg);
+            }
+        }
+    },
+    /**
+     * Chain a worker with an other.
+     * @param {Worker} next the worker receiving events from the current one.
+     * @return {worker} the next worker for chainability
+     */
+    pipe : function (next) {
+        return next.registerPrevious(this);
+    },
+    /**
+     * Same as `pipe` in the other direction.
+     * Using an API with `pipe(next)` is very easy.
+     * Implementing the API with the point of view of the next one registering
+     * a source is easier, see the ZipFileWorker.
+     * @param {Worker} previous the previous worker, sending events to this one
+     * @return {Worker} the current worker for chainability
+     */
+    registerPrevious : function (previous) {
+        if (this.isLocked) {
+            throw new Error("The stream '" + this + "' has already been used.");
+        }
+
+        // sharing the streamInfo...
+        this.streamInfo = previous.streamInfo;
+        // ... and adding our own bits
+        this.mergeStreamInfo();
+        this.previous =  previous;
+        var self = this;
+        previous.on('data', function (chunk) {
+            self.processChunk(chunk);
+        });
+        previous.on('end', function () {
+            self.end();
+        });
+        previous.on('error', function (e) {
+            self.error(e);
+        });
+        return this;
+    },
+    /**
+     * Pause the stream so it doesn't send events anymore.
+     * @return {Boolean} true if this call paused the worker, false otherwise.
+     */
+    pause : function () {
+        if(this.isPaused || this.isFinished) {
+            return false;
+        }
+        this.isPaused = true;
+
+        if(this.previous) {
+            this.previous.pause();
+        }
+        return true;
+    },
+    /**
+     * Resume a paused stream.
+     * @return {Boolean} true if this call resumed the worker, false otherwise.
+     */
+    resume : function () {
+        if(!this.isPaused || this.isFinished) {
+            return false;
+        }
+        this.isPaused = false;
+
+        // if true, the worker tried to resume but failed
+        var withError = false;
+        if(this.generatedError) {
+            this.error(this.generatedError);
+            withError = true;
+        }
+        if(this.previous) {
+            this.previous.resume();
+        }
+
+        return !withError;
+    },
+    /**
+     * Flush any remaining bytes as the stream is ending.
+     */
+    flush : function () {},
+    /**
+     * Process a chunk. This is usually the method overridden.
+     * @param {Object} chunk the chunk to process.
+     */
+    processChunk : function(chunk) {
+        this.push(chunk);
+    },
+    /**
+     * Add a key/value to be added in the workers chain streamInfo once activated.
+     * @param {String} key the key to use
+     * @param {Object} value the associated value
+     * @return {Worker} the current worker for chainability
+     */
+    withStreamInfo : function (key, value) {
+        this.extraStreamInfo[key] = value;
+        this.mergeStreamInfo();
+        return this;
+    },
+    /**
+     * Merge this worker's streamInfo into the chain's streamInfo.
+     */
+    mergeStreamInfo : function () {
+        for(var key in this.extraStreamInfo) {
+            if (!this.extraStreamInfo.hasOwnProperty(key)) {
+                continue;
+            }
+            this.streamInfo[key] = this.extraStreamInfo[key];
+        }
+    },
+
+    /**
+     * Lock the stream to prevent further updates on the workers chain.
+     * After calling this method, all calls to pipe will fail.
+     */
+    lock: function () {
+        if (this.isLocked) {
+            throw new Error("The stream '" + this + "' has already been used.");
+        }
+        this.isLocked = true;
+        if (this.previous) {
+            this.previous.lock();
+        }
+    },
+
+    /**
+     *
+     * Pretty print the workers chain.
+     */
+    toString : function () {
+        var me = "Worker " + this.name;
+        if (this.previous) {
+            return this.previous + " -> " + me;
+        } else {
+            return me;
+        }
+    }
+};
+
+module.exports = GenericWorker;
+
+
+/***/ }),
+
+/***/ 6865:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+
+
+var utils = __nccwpck_require__(530);
+var ConvertWorker = __nccwpck_require__(2606);
+var GenericWorker = __nccwpck_require__(7518);
+var base64 = __nccwpck_require__(2616);
+var support = __nccwpck_require__(6964);
+var external = __nccwpck_require__(4009);
+
+var NodejsStreamOutputAdapter = null;
+if (support.nodestream) {
+    try {
+        NodejsStreamOutputAdapter = __nccwpck_require__(374);
+    } catch(e) {}
+}
+
+/**
+ * Apply the final transformation of the data. If the user wants a Blob for
+ * example, it's easier to work with an U8intArray and finally do the
+ * ArrayBuffer/Blob conversion.
+ * @param {String} type the name of the final type
+ * @param {String|Uint8Array|Buffer} content the content to transform
+ * @param {String} mimeType the mime type of the content, if applicable.
+ * @return {String|Uint8Array|ArrayBuffer|Buffer|Blob} the content in the right format.
+ */
+function transformZipOutput(type, content, mimeType) {
+    switch(type) {
+        case "blob" :
+            return utils.newBlob(utils.transformTo("arraybuffer", content), mimeType);
+        case "base64" :
+            return base64.encode(content);
+        default :
+            return utils.transformTo(type, content);
+    }
+}
+
+/**
+ * Concatenate an array of data of the given type.
+ * @param {String} type the type of the data in the given array.
+ * @param {Array} dataArray the array containing the data chunks to concatenate
+ * @return {String|Uint8Array|Buffer} the concatenated data
+ * @throws Error if the asked type is unsupported
+ */
+function concat (type, dataArray) {
+    var i, index = 0, res = null, totalLength = 0;
+    for(i = 0; i < dataArray.length; i++) {
+        totalLength += dataArray[i].length;
+    }
+    switch(type) {
+        case "string":
+            return dataArray.join("");
+          case "array":
+            return Array.prototype.concat.apply([], dataArray);
+        case "uint8array":
+            res = new Uint8Array(totalLength);
+            for(i = 0; i < dataArray.length; i++) {
+                res.set(dataArray[i], index);
+                index += dataArray[i].length;
+            }
+            return res;
+        case "nodebuffer":
+            return Buffer.concat(dataArray);
+        default:
+            throw new Error("concat : unsupported type '"  + type + "'");
+    }
+}
+
+/**
+ * Listen a StreamHelper, accumulate its content and concatenate it into a
+ * complete block.
+ * @param {StreamHelper} helper the helper to use.
+ * @param {Function} updateCallback a callback called on each update. Called
+ * with one arg :
+ * - the metadata linked to the update received.
+ * @return Promise the promise for the accumulation.
+ */
+function accumulate(helper, updateCallback) {
+    return new external.Promise(function (resolve, reject){
+        var dataArray = [];
+        var chunkType = helper._internalType,
+            resultType = helper._outputType,
+            mimeType = helper._mimeType;
+        helper
+        .on('data', function (data, meta) {
+            dataArray.push(data);
+            if(updateCallback) {
+                updateCallback(meta);
+            }
+        })
+        .on('error', function(err) {
+            dataArray = [];
+            reject(err);
+        })
+        .on('end', function (){
+            try {
+                var result = transformZipOutput(resultType, concat(chunkType, dataArray), mimeType);
+                resolve(result);
+            } catch (e) {
+                reject(e);
+            }
+            dataArray = [];
+        })
+        .resume();
+    });
+}
+
+/**
+ * An helper to easily use workers outside of JSZip.
+ * @constructor
+ * @param {Worker} worker the worker to wrap
+ * @param {String} outputType the type of data expected by the use
+ * @param {String} mimeType the mime type of the content, if applicable.
+ */
+function StreamHelper(worker, outputType, mimeType) {
+    var internalType = outputType;
+    switch(outputType) {
+        case "blob":
+        case "arraybuffer":
+            internalType = "uint8array";
+        break;
+        case "base64":
+            internalType = "string";
+        break;
+    }
+
+    try {
+        // the type used internally
+        this._internalType = internalType;
+        // the type used to output results
+        this._outputType = outputType;
+        // the mime type
+        this._mimeType = mimeType;
+        utils.checkSupport(internalType);
+        this._worker = worker.pipe(new ConvertWorker(internalType));
+        // the last workers can be rewired without issues but we need to
+        // prevent any updates on previous workers.
+        worker.lock();
+    } catch(e) {
+        this._worker = new GenericWorker("error");
+        this._worker.error(e);
+    }
+}
+
+StreamHelper.prototype = {
+    /**
+     * Listen a StreamHelper, accumulate its content and concatenate it into a
+     * complete block.
+     * @param {Function} updateCb the update callback.
+     * @return Promise the promise for the accumulation.
+     */
+    accumulate : function (updateCb) {
+        return accumulate(this, updateCb);
+    },
+    /**
+     * Add a listener on an event triggered on a stream.
+     * @param {String} evt the name of the event
+     * @param {Function} fn the listener
+     * @return {StreamHelper} the current helper.
+     */
+    on : function (evt, fn) {
+        var self = this;
+
+        if(evt === "data") {
+            this._worker.on(evt, function (chunk) {
+                fn.call(self, chunk.data, chunk.meta);
+            });
+        } else {
+            this._worker.on(evt, function () {
+                utils.delay(fn, arguments, self);
+            });
+        }
+        return this;
+    },
+    /**
+     * Resume the flow of chunks.
+     * @return {StreamHelper} the current helper.
+     */
+    resume : function () {
+        utils.delay(this._worker.resume, [], this._worker);
+        return this;
+    },
+    /**
+     * Pause the flow of chunks.
+     * @return {StreamHelper} the current helper.
+     */
+    pause : function () {
+        this._worker.pause();
+        return this;
+    },
+    /**
+     * Return a nodejs stream for this helper.
+     * @param {Function} updateCb the update callback.
+     * @return {NodejsStreamOutputAdapter} the nodejs stream.
+     */
+    toNodejsStream : function (updateCb) {
+        utils.checkSupport("nodestream");
+        if (this._outputType !== "nodebuffer") {
+            // an object stream containing blob/arraybuffer/uint8array/string
+            // is strange and I don't know if it would be useful.
+            // I you find this comment and have a good usecase, please open a
+            // bug report !
+            throw new Error(this._outputType + " is not supported by this method");
+        }
+
+        return new NodejsStreamOutputAdapter(this, {
+            objectMode : this._outputType !== "nodebuffer"
+        }, updateCb);
+    }
+};
+
+
+module.exports = StreamHelper;
+
+
+/***/ }),
+
+/***/ 6964:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+
+
+exports.base64 = true;
+exports.array = true;
+exports.string = true;
+exports.arraybuffer = typeof ArrayBuffer !== "undefined" && typeof Uint8Array !== "undefined";
+exports.nodebuffer = typeof Buffer !== "undefined";
+// contains true if JSZip can read/generate Uint8Array, false otherwise.
+exports.uint8array = typeof Uint8Array !== "undefined";
+
+if (typeof ArrayBuffer === "undefined") {
+    exports.blob = false;
+}
+else {
+    var buffer = new ArrayBuffer(0);
+    try {
+        exports.blob = new Blob([buffer], {
+            type: "application/zip"
+        }).size === 0;
+    }
+    catch (e) {
+        try {
+            var Builder = self.BlobBuilder || self.WebKitBlobBuilder || self.MozBlobBuilder || self.MSBlobBuilder;
+            var builder = new Builder();
+            builder.append(buffer);
+            exports.blob = builder.getBlob('application/zip').size === 0;
+        }
+        catch (e) {
+            exports.blob = false;
+        }
+    }
+}
+
+try {
+    exports.nodestream = !!(__nccwpck_require__(3901).Readable);
+} catch(e) {
+    exports.nodestream = false;
+}
+
+
+/***/ }),
+
+/***/ 7643:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+
+
+var utils = __nccwpck_require__(530);
+var support = __nccwpck_require__(6964);
+var nodejsUtils = __nccwpck_require__(3151);
+var GenericWorker = __nccwpck_require__(7518);
+
+/**
+ * The following functions come from pako, from pako/lib/utils/strings
+ * released under the MIT license, see pako https://github.com/nodeca/pako/
+ */
+
+// Table with utf8 lengths (calculated by first byte of sequence)
+// Note, that 5 & 6-byte values and some 4-byte values can not be represented in JS,
+// because max possible codepoint is 0x10ffff
+var _utf8len = new Array(256);
+for (var i=0; i<256; i++) {
+  _utf8len[i] = (i >= 252 ? 6 : i >= 248 ? 5 : i >= 240 ? 4 : i >= 224 ? 3 : i >= 192 ? 2 : 1);
+}
+_utf8len[254]=_utf8len[254]=1; // Invalid sequence start
+
+// convert string to array (typed, when possible)
+var string2buf = function (str) {
+    var buf, c, c2, m_pos, i, str_len = str.length, buf_len = 0;
+
+    // count binary size
+    for (m_pos = 0; m_pos < str_len; m_pos++) {
+        c = str.charCodeAt(m_pos);
+        if ((c & 0xfc00) === 0xd800 && (m_pos+1 < str_len)) {
+            c2 = str.charCodeAt(m_pos+1);
+            if ((c2 & 0xfc00) === 0xdc00) {
+                c = 0x10000 + ((c - 0xd800) << 10) + (c2 - 0xdc00);
+                m_pos++;
+            }
+        }
+        buf_len += c < 0x80 ? 1 : c < 0x800 ? 2 : c < 0x10000 ? 3 : 4;
+    }
+
+    // allocate buffer
+    if (support.uint8array) {
+        buf = new Uint8Array(buf_len);
+    } else {
+        buf = new Array(buf_len);
+    }
+
+    // convert
+    for (i=0, m_pos = 0; i < buf_len; m_pos++) {
+        c = str.charCodeAt(m_pos);
+        if ((c & 0xfc00) === 0xd800 && (m_pos+1 < str_len)) {
+            c2 = str.charCodeAt(m_pos+1);
+            if ((c2 & 0xfc00) === 0xdc00) {
+                c = 0x10000 + ((c - 0xd800) << 10) + (c2 - 0xdc00);
+                m_pos++;
+            }
+        }
+        if (c < 0x80) {
+            /* one byte */
+            buf[i++] = c;
+        } else if (c < 0x800) {
+            /* two bytes */
+            buf[i++] = 0xC0 | (c >>> 6);
+            buf[i++] = 0x80 | (c & 0x3f);
+        } else if (c < 0x10000) {
+            /* three bytes */
+            buf[i++] = 0xE0 | (c >>> 12);
+            buf[i++] = 0x80 | (c >>> 6 & 0x3f);
+            buf[i++] = 0x80 | (c & 0x3f);
+        } else {
+            /* four bytes */
+            buf[i++] = 0xf0 | (c >>> 18);
+            buf[i++] = 0x80 | (c >>> 12 & 0x3f);
+            buf[i++] = 0x80 | (c >>> 6 & 0x3f);
+            buf[i++] = 0x80 | (c & 0x3f);
+        }
+    }
+
+    return buf;
+};
+
+// Calculate max possible position in utf8 buffer,
+// that will not break sequence. If that's not possible
+// - (very small limits) return max size as is.
+//
+// buf[] - utf8 bytes array
+// max   - length limit (mandatory);
+var utf8border = function(buf, max) {
+    var pos;
+
+    max = max || buf.length;
+    if (max > buf.length) { max = buf.length; }
+
+    // go back from last position, until start of sequence found
+    pos = max-1;
+    while (pos >= 0 && (buf[pos] & 0xC0) === 0x80) { pos--; }
+
+    // Fuckup - very small and broken sequence,
+    // return max, because we should return something anyway.
+    if (pos < 0) { return max; }
+
+    // If we came to start of buffer - that means vuffer is too small,
+    // return max too.
+    if (pos === 0) { return max; }
+
+    return (pos + _utf8len[buf[pos]] > max) ? pos : max;
+};
+
+// convert array to string
+var buf2string = function (buf) {
+    var str, i, out, c, c_len;
+    var len = buf.length;
+
+    // Reserve max possible length (2 words per char)
+    // NB: by unknown reasons, Array is significantly faster for
+    //     String.fromCharCode.apply than Uint16Array.
+    var utf16buf = new Array(len*2);
+
+    for (out=0, i=0; i<len;) {
+        c = buf[i++];
+        // quick process ascii
+        if (c < 0x80) { utf16buf[out++] = c; continue; }
+
+        c_len = _utf8len[c];
+        // skip 5 & 6 byte codes
+        if (c_len > 4) { utf16buf[out++] = 0xfffd; i += c_len-1; continue; }
+
+        // apply mask on first byte
+        c &= c_len === 2 ? 0x1f : c_len === 3 ? 0x0f : 0x07;
+        // join the rest
+        while (c_len > 1 && i < len) {
+            c = (c << 6) | (buf[i++] & 0x3f);
+            c_len--;
+        }
+
+        // terminated by end of string?
+        if (c_len > 1) { utf16buf[out++] = 0xfffd; continue; }
+
+        if (c < 0x10000) {
+            utf16buf[out++] = c;
+        } else {
+            c -= 0x10000;
+            utf16buf[out++] = 0xd800 | ((c >> 10) & 0x3ff);
+            utf16buf[out++] = 0xdc00 | (c & 0x3ff);
+        }
+    }
+
+    // shrinkBuf(utf16buf, out)
+    if (utf16buf.length !== out) {
+        if(utf16buf.subarray) {
+            utf16buf = utf16buf.subarray(0, out);
+        } else {
+            utf16buf.length = out;
+        }
+    }
+
+    // return String.fromCharCode.apply(null, utf16buf);
+    return utils.applyFromCharCode(utf16buf);
+};
+
+
+// That's all for the pako functions.
+
+
+/**
+ * Transform a javascript string into an array (typed if possible) of bytes,
+ * UTF-8 encoded.
+ * @param {String} str the string to encode
+ * @return {Array|Uint8Array|Buffer} the UTF-8 encoded string.
+ */
+exports.utf8encode = function utf8encode(str) {
+    if (support.nodebuffer) {
+        return nodejsUtils.newBufferFrom(str, "utf-8");
+    }
+
+    return string2buf(str);
+};
+
+
+/**
+ * Transform a bytes array (or a representation) representing an UTF-8 encoded
+ * string into a javascript string.
+ * @param {Array|Uint8Array|Buffer} buf the data de decode
+ * @return {String} the decoded string.
+ */
+exports.utf8decode = function utf8decode(buf) {
+    if (support.nodebuffer) {
+        return utils.transformTo("nodebuffer", buf).toString("utf-8");
+    }
+
+    buf = utils.transformTo(support.uint8array ? "uint8array" : "array", buf);
+
+    return buf2string(buf);
+};
+
+/**
+ * A worker to decode utf8 encoded binary chunks into string chunks.
+ * @constructor
+ */
+function Utf8DecodeWorker() {
+    GenericWorker.call(this, "utf-8 decode");
+    // the last bytes if a chunk didn't end with a complete codepoint.
+    this.leftOver = null;
+}
+utils.inherits(Utf8DecodeWorker, GenericWorker);
+
+/**
+ * @see GenericWorker.processChunk
+ */
+Utf8DecodeWorker.prototype.processChunk = function (chunk) {
+
+    var data = utils.transformTo(support.uint8array ? "uint8array" : "array", chunk.data);
+
+    // 1st step, re-use what's left of the previous chunk
+    if (this.leftOver && this.leftOver.length) {
+        if(support.uint8array) {
+            var previousData = data;
+            data = new Uint8Array(previousData.length + this.leftOver.length);
+            data.set(this.leftOver, 0);
+            data.set(previousData, this.leftOver.length);
+        } else {
+            data = this.leftOver.concat(data);
+        }
+        this.leftOver = null;
+    }
+
+    var nextBoundary = utf8border(data);
+    var usableData = data;
+    if (nextBoundary !== data.length) {
+        if (support.uint8array) {
+            usableData = data.subarray(0, nextBoundary);
+            this.leftOver = data.subarray(nextBoundary, data.length);
+        } else {
+            usableData = data.slice(0, nextBoundary);
+            this.leftOver = data.slice(nextBoundary, data.length);
+        }
+    }
+
+    this.push({
+        data : exports.utf8decode(usableData),
+        meta : chunk.meta
+    });
+};
+
+/**
+ * @see GenericWorker.flush
+ */
+Utf8DecodeWorker.prototype.flush = function () {
+    if(this.leftOver && this.leftOver.length) {
+        this.push({
+            data : exports.utf8decode(this.leftOver),
+            meta : {}
+        });
+        this.leftOver = null;
+    }
+};
+exports.Utf8DecodeWorker = Utf8DecodeWorker;
+
+/**
+ * A worker to endcode string chunks into utf8 encoded binary chunks.
+ * @constructor
+ */
+function Utf8EncodeWorker() {
+    GenericWorker.call(this, "utf-8 encode");
+}
+utils.inherits(Utf8EncodeWorker, GenericWorker);
+
+/**
+ * @see GenericWorker.processChunk
+ */
+Utf8EncodeWorker.prototype.processChunk = function (chunk) {
+    this.push({
+        data : exports.utf8encode(chunk.data),
+        meta : chunk.meta
+    });
+};
+exports.Utf8EncodeWorker = Utf8EncodeWorker;
+
+
+/***/ }),
+
+/***/ 530:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+
+
+var support = __nccwpck_require__(6964);
+var base64 = __nccwpck_require__(2616);
+var nodejsUtils = __nccwpck_require__(3151);
+var setImmediate = __nccwpck_require__(2201);
+var external = __nccwpck_require__(4009);
+
+
+/**
+ * Convert a string that pass as a "binary string": it should represent a byte
+ * array but may have > 255 char codes. Be sure to take only the first byte
+ * and returns the byte array.
+ * @param {String} str the string to transform.
+ * @return {Array|Uint8Array} the string in a binary format.
+ */
+function string2binary(str) {
+    var result = null;
+    if (support.uint8array) {
+      result = new Uint8Array(str.length);
+    } else {
+      result = new Array(str.length);
+    }
+    return stringToArrayLike(str, result);
+}
+
+/**
+ * Create a new blob with the given content and the given type.
+ * @param {String|ArrayBuffer} part the content to put in the blob. DO NOT use
+ * an Uint8Array because the stock browser of android 4 won't accept it (it
+ * will be silently converted to a string, "[object Uint8Array]").
+ *
+ * Use only ONE part to build the blob to avoid a memory leak in IE11 / Edge:
+ * when a large amount of Array is used to create the Blob, the amount of
+ * memory consumed is nearly 100 times the original data amount.
+ *
+ * @param {String} type the mime type of the blob.
+ * @return {Blob} the created blob.
+ */
+exports.newBlob = function(part, type) {
+    exports.checkSupport("blob");
+
+    try {
+        // Blob constructor
+        return new Blob([part], {
+            type: type
+        });
+    }
+    catch (e) {
+
+        try {
+            // deprecated, browser only, old way
+            var Builder = self.BlobBuilder || self.WebKitBlobBuilder || self.MozBlobBuilder || self.MSBlobBuilder;
+            var builder = new Builder();
+            builder.append(part);
+            return builder.getBlob(type);
+        }
+        catch (e) {
+
+            // well, fuck ?!
+            throw new Error("Bug : can't construct the Blob.");
+        }
+    }
+
+
+};
+/**
+ * The identity function.
+ * @param {Object} input the input.
+ * @return {Object} the same input.
+ */
+function identity(input) {
+    return input;
+}
+
+/**
+ * Fill in an array with a string.
+ * @param {String} str the string to use.
+ * @param {Array|ArrayBuffer|Uint8Array|Buffer} array the array to fill in (will be mutated).
+ * @return {Array|ArrayBuffer|Uint8Array|Buffer} the updated array.
+ */
+function stringToArrayLike(str, array) {
+    for (var i = 0; i < str.length; ++i) {
+        array[i] = str.charCodeAt(i) & 0xFF;
+    }
+    return array;
+}
+
+/**
+ * An helper for the function arrayLikeToString.
+ * This contains static information and functions that
+ * can be optimized by the browser JIT compiler.
+ */
+var arrayToStringHelper = {
+    /**
+     * Transform an array of int into a string, chunk by chunk.
+     * See the performances notes on arrayLikeToString.
+     * @param {Array|ArrayBuffer|Uint8Array|Buffer} array the array to transform.
+     * @param {String} type the type of the array.
+     * @param {Integer} chunk the chunk size.
+     * @return {String} the resulting string.
+     * @throws Error if the chunk is too big for the stack.
+     */
+    stringifyByChunk: function(array, type, chunk) {
+        var result = [], k = 0, len = array.length;
+        // shortcut
+        if (len <= chunk) {
+            return String.fromCharCode.apply(null, array);
+        }
+        while (k < len) {
+            if (type === "array" || type === "nodebuffer") {
+                result.push(String.fromCharCode.apply(null, array.slice(k, Math.min(k + chunk, len))));
+            }
+            else {
+                result.push(String.fromCharCode.apply(null, array.subarray(k, Math.min(k + chunk, len))));
+            }
+            k += chunk;
+        }
+        return result.join("");
+    },
+    /**
+     * Call String.fromCharCode on every item in the array.
+     * This is the naive implementation, which generate A LOT of intermediate string.
+     * This should be used when everything else fail.
+     * @param {Array|ArrayBuffer|Uint8Array|Buffer} array the array to transform.
+     * @return {String} the result.
+     */
+    stringifyByChar: function(array){
+        var resultStr = "";
+        for(var i = 0; i < array.length; i++) {
+            resultStr += String.fromCharCode(array[i]);
+        }
+        return resultStr;
+    },
+    applyCanBeUsed : {
+        /**
+         * true if the browser accepts to use String.fromCharCode on Uint8Array
+         */
+        uint8array : (function () {
+            try {
+                return support.uint8array && String.fromCharCode.apply(null, new Uint8Array(1)).length === 1;
+            } catch (e) {
+                return false;
+            }
+        })(),
+        /**
+         * true if the browser accepts to use String.fromCharCode on nodejs Buffer.
+         */
+        nodebuffer : (function () {
+            try {
+                return support.nodebuffer && String.fromCharCode.apply(null, nodejsUtils.allocBuffer(1)).length === 1;
+            } catch (e) {
+                return false;
+            }
+        })()
+    }
+};
+
+/**
+ * Transform an array-like object to a string.
+ * @param {Array|ArrayBuffer|Uint8Array|Buffer} array the array to transform.
+ * @return {String} the result.
+ */
+function arrayLikeToString(array) {
+    // Performances notes :
+    // --------------------
+    // String.fromCharCode.apply(null, array) is the fastest, see
+    // see http://jsperf.com/converting-a-uint8array-to-a-string/2
+    // but the stack is limited (and we can get huge arrays !).
+    //
+    // result += String.fromCharCode(array[i]); generate too many strings !
+    //
+    // This code is inspired by http://jsperf.com/arraybuffer-to-string-apply-performance/2
+    // TODO : we now have workers that split the work. Do we still need that ?
+    var chunk = 65536,
+        type = exports.getTypeOf(array),
+        canUseApply = true;
+    if (type === "uint8array") {
+        canUseApply = arrayToStringHelper.applyCanBeUsed.uint8array;
+    } else if (type === "nodebuffer") {
+        canUseApply = arrayToStringHelper.applyCanBeUsed.nodebuffer;
+    }
+
+    if (canUseApply) {
+        while (chunk > 1) {
+            try {
+                return arrayToStringHelper.stringifyByChunk(array, type, chunk);
+            } catch (e) {
+                chunk = Math.floor(chunk / 2);
+            }
+        }
+    }
+
+    // no apply or chunk error : slow and painful algorithm
+    // default browser on android 4.*
+    return arrayToStringHelper.stringifyByChar(array);
+}
+
+exports.applyFromCharCode = arrayLikeToString;
+
+
+/**
+ * Copy the data from an array-like to an other array-like.
+ * @param {Array|ArrayBuffer|Uint8Array|Buffer} arrayFrom the origin array.
+ * @param {Array|ArrayBuffer|Uint8Array|Buffer} arrayTo the destination array which will be mutated.
+ * @return {Array|ArrayBuffer|Uint8Array|Buffer} the updated destination array.
+ */
+function arrayLikeToArrayLike(arrayFrom, arrayTo) {
+    for (var i = 0; i < arrayFrom.length; i++) {
+        arrayTo[i] = arrayFrom[i];
+    }
+    return arrayTo;
+}
+
+// a matrix containing functions to transform everything into everything.
+var transform = {};
+
+// string to ?
+transform["string"] = {
+    "string": identity,
+    "array": function(input) {
+        return stringToArrayLike(input, new Array(input.length));
+    },
+    "arraybuffer": function(input) {
+        return transform["string"]["uint8array"](input).buffer;
+    },
+    "uint8array": function(input) {
+        return stringToArrayLike(input, new Uint8Array(input.length));
+    },
+    "nodebuffer": function(input) {
+        return stringToArrayLike(input, nodejsUtils.allocBuffer(input.length));
+    }
+};
+
+// array to ?
+transform["array"] = {
+    "string": arrayLikeToString,
+    "array": identity,
+    "arraybuffer": function(input) {
+        return (new Uint8Array(input)).buffer;
+    },
+    "uint8array": function(input) {
+        return new Uint8Array(input);
+    },
+    "nodebuffer": function(input) {
+        return nodejsUtils.newBufferFrom(input);
+    }
+};
+
+// arraybuffer to ?
+transform["arraybuffer"] = {
+    "string": function(input) {
+        return arrayLikeToString(new Uint8Array(input));
+    },
+    "array": function(input) {
+        return arrayLikeToArrayLike(new Uint8Array(input), new Array(input.byteLength));
+    },
+    "arraybuffer": identity,
+    "uint8array": function(input) {
+        return new Uint8Array(input);
+    },
+    "nodebuffer": function(input) {
+        return nodejsUtils.newBufferFrom(new Uint8Array(input));
+    }
+};
+
+// uint8array to ?
+transform["uint8array"] = {
+    "string": arrayLikeToString,
+    "array": function(input) {
+        return arrayLikeToArrayLike(input, new Array(input.length));
+    },
+    "arraybuffer": function(input) {
+        return input.buffer;
+    },
+    "uint8array": identity,
+    "nodebuffer": function(input) {
+        return nodejsUtils.newBufferFrom(input);
+    }
+};
+
+// nodebuffer to ?
+transform["nodebuffer"] = {
+    "string": arrayLikeToString,
+    "array": function(input) {
+        return arrayLikeToArrayLike(input, new Array(input.length));
+    },
+    "arraybuffer": function(input) {
+        return transform["nodebuffer"]["uint8array"](input).buffer;
+    },
+    "uint8array": function(input) {
+        return arrayLikeToArrayLike(input, new Uint8Array(input.length));
+    },
+    "nodebuffer": identity
+};
+
+/**
+ * Transform an input into any type.
+ * The supported output type are : string, array, uint8array, arraybuffer, nodebuffer.
+ * If no output type is specified, the unmodified input will be returned.
+ * @param {String} outputType the output type.
+ * @param {String|Array|ArrayBuffer|Uint8Array|Buffer} input the input to convert.
+ * @throws {Error} an Error if the browser doesn't support the requested output type.
+ */
+exports.transformTo = function(outputType, input) {
+    if (!input) {
+        // undefined, null, etc
+        // an empty string won't harm.
+        input = "";
+    }
+    if (!outputType) {
+        return input;
+    }
+    exports.checkSupport(outputType);
+    var inputType = exports.getTypeOf(input);
+    var result = transform[inputType][outputType](input);
+    return result;
+};
+
+/**
+ * Return the type of the input.
+ * The type will be in a format valid for JSZip.utils.transformTo : string, array, uint8array, arraybuffer.
+ * @param {Object} input the input to identify.
+ * @return {String} the (lowercase) type of the input.
+ */
+exports.getTypeOf = function(input) {
+    if (typeof input === "string") {
+        return "string";
+    }
+    if (Object.prototype.toString.call(input) === "[object Array]") {
+        return "array";
+    }
+    if (support.nodebuffer && nodejsUtils.isBuffer(input)) {
+        return "nodebuffer";
+    }
+    if (support.uint8array && input instanceof Uint8Array) {
+        return "uint8array";
+    }
+    if (support.arraybuffer && input instanceof ArrayBuffer) {
+        return "arraybuffer";
+    }
+};
+
+/**
+ * Throw an exception if the type is not supported.
+ * @param {String} type the type to check.
+ * @throws {Error} an Error if the browser doesn't support the requested type.
+ */
+exports.checkSupport = function(type) {
+    var supported = support[type.toLowerCase()];
+    if (!supported) {
+        throw new Error(type + " is not supported by this platform");
+    }
+};
+
+exports.MAX_VALUE_16BITS = 65535;
+exports.MAX_VALUE_32BITS = -1; // well, "\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF" is parsed as -1
+
+/**
+ * Prettify a string read as binary.
+ * @param {string} str the string to prettify.
+ * @return {string} a pretty string.
+ */
+exports.pretty = function(str) {
+    var res = '',
+        code, i;
+    for (i = 0; i < (str || "").length; i++) {
+        code = str.charCodeAt(i);
+        res += '\\x' + (code < 16 ? "0" : "") + code.toString(16).toUpperCase();
+    }
+    return res;
+};
+
+/**
+ * Defer the call of a function.
+ * @param {Function} callback the function to call asynchronously.
+ * @param {Array} args the arguments to give to the callback.
+ */
+exports.delay = function(callback, args, self) {
+    setImmediate(function () {
+        callback.apply(self || null, args || []);
+    });
+};
+
+/**
+ * Extends a prototype with an other, without calling a constructor with
+ * side effects. Inspired by nodejs' `utils.inherits`
+ * @param {Function} ctor the constructor to augment
+ * @param {Function} superCtor the parent constructor to use
+ */
+exports.inherits = function (ctor, superCtor) {
+    var Obj = function() {};
+    Obj.prototype = superCtor.prototype;
+    ctor.prototype = new Obj();
+};
+
+/**
+ * Merge the objects passed as parameters into a new one.
+ * @private
+ * @param {...Object} var_args All objects to merge.
+ * @return {Object} a new object with the data of the others.
+ */
+exports.extend = function() {
+    var result = {}, i, attr;
+    for (i = 0; i < arguments.length; i++) { // arguments is not enumerable in some browsers
+        for (attr in arguments[i]) {
+            if (arguments[i].hasOwnProperty(attr) && typeof result[attr] === "undefined") {
+                result[attr] = arguments[i][attr];
+            }
+        }
+    }
+    return result;
+};
+
+/**
+ * Transform arbitrary content into a Promise.
+ * @param {String} name a name for the content being processed.
+ * @param {Object} inputData the content to process.
+ * @param {Boolean} isBinary true if the content is not an unicode string
+ * @param {Boolean} isOptimizedBinaryString true if the string content only has one byte per character.
+ * @param {Boolean} isBase64 true if the string content is encoded with base64.
+ * @return {Promise} a promise in a format usable by JSZip.
+ */
+exports.prepareContent = function(name, inputData, isBinary, isOptimizedBinaryString, isBase64) {
+
+    // if inputData is already a promise, this flatten it.
+    var promise = external.Promise.resolve(inputData).then(function(data) {
+        
+        
+        var isBlob = support.blob && (data instanceof Blob || ['[object File]', '[object Blob]'].indexOf(Object.prototype.toString.call(data)) !== -1);
+
+        if (isBlob && typeof FileReader !== "undefined") {
+            return new external.Promise(function (resolve, reject) {
+                var reader = new FileReader();
+
+                reader.onload = function(e) {
+                    resolve(e.target.result);
+                };
+                reader.onerror = function(e) {
+                    reject(e.target.error);
+                };
+                reader.readAsArrayBuffer(data);
+            });
+        } else {
+            return data;
+        }
+    });
+
+    return promise.then(function(data) {
+        var dataType = exports.getTypeOf(data);
+
+        if (!dataType) {
+            return external.Promise.reject(
+                new Error("Can't read the data of '" + name + "'. Is it " +
+                          "in a supported JavaScript type (String, Blob, ArrayBuffer, etc) ?")
+            );
+        }
+        // special case : it's way easier to work with Uint8Array than with ArrayBuffer
+        if (dataType === "arraybuffer") {
+            data = exports.transformTo("uint8array", data);
+        } else if (dataType === "string") {
+            if (isBase64) {
+                data = base64.decode(data);
+            }
+            else if (isBinary) {
+                // optimizedBinaryString === true means that the file has already been filtered with a 0xFF mask
+                if (isOptimizedBinaryString !== true) {
+                    // this is a string, not in a base64 format.
+                    // Be sure that this is a correct "binary string"
+                    data = string2binary(data);
+                }
+            }
+        }
+        return data;
+    });
+};
+
+
+/***/ }),
+
+/***/ 5466:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+
+var readerFor = __nccwpck_require__(2322);
+var utils = __nccwpck_require__(530);
+var sig = __nccwpck_require__(7119);
+var ZipEntry = __nccwpck_require__(6847);
+var utf8 = __nccwpck_require__(7643);
+var support = __nccwpck_require__(6964);
+//  class ZipEntries {{{
+/**
+ * All the entries in the zip file.
+ * @constructor
+ * @param {Object} loadOptions Options for loading the stream.
+ */
+function ZipEntries(loadOptions) {
+    this.files = [];
+    this.loadOptions = loadOptions;
+}
+ZipEntries.prototype = {
+    /**
+     * Check that the reader is on the specified signature.
+     * @param {string} expectedSignature the expected signature.
+     * @throws {Error} if it is an other signature.
+     */
+    checkSignature: function(expectedSignature) {
+        if (!this.reader.readAndCheckSignature(expectedSignature)) {
+            this.reader.index -= 4;
+            var signature = this.reader.readString(4);
+            throw new Error("Corrupted zip or bug: unexpected signature " + "(" + utils.pretty(signature) + ", expected " + utils.pretty(expectedSignature) + ")");
+        }
+    },
+    /**
+     * Check if the given signature is at the given index.
+     * @param {number} askedIndex the index to check.
+     * @param {string} expectedSignature the signature to expect.
+     * @return {boolean} true if the signature is here, false otherwise.
+     */
+    isSignature: function(askedIndex, expectedSignature) {
+        var currentIndex = this.reader.index;
+        this.reader.setIndex(askedIndex);
+        var signature = this.reader.readString(4);
+        var result = signature === expectedSignature;
+        this.reader.setIndex(currentIndex);
+        return result;
+    },
+    /**
+     * Read the end of the central directory.
+     */
+    readBlockEndOfCentral: function() {
+        this.diskNumber = this.reader.readInt(2);
+        this.diskWithCentralDirStart = this.reader.readInt(2);
+        this.centralDirRecordsOnThisDisk = this.reader.readInt(2);
+        this.centralDirRecords = this.reader.readInt(2);
+        this.centralDirSize = this.reader.readInt(4);
+        this.centralDirOffset = this.reader.readInt(4);
+
+        this.zipCommentLength = this.reader.readInt(2);
+        // warning : the encoding depends of the system locale
+        // On a linux machine with LANG=en_US.utf8, this field is utf8 encoded.
+        // On a windows machine, this field is encoded with the localized windows code page.
+        var zipComment = this.reader.readData(this.zipCommentLength);
+        var decodeParamType = support.uint8array ? "uint8array" : "array";
+        // To get consistent behavior with the generation part, we will assume that
+        // this is utf8 encoded unless specified otherwise.
+        var decodeContent = utils.transformTo(decodeParamType, zipComment);
+        this.zipComment = this.loadOptions.decodeFileName(decodeContent);
+    },
+    /**
+     * Read the end of the Zip 64 central directory.
+     * Not merged with the method readEndOfCentral :
+     * The end of central can coexist with its Zip64 brother,
+     * I don't want to read the wrong number of bytes !
+     */
+    readBlockZip64EndOfCentral: function() {
+        this.zip64EndOfCentralSize = this.reader.readInt(8);
+        this.reader.skip(4);
+        // this.versionMadeBy = this.reader.readString(2);
+        // this.versionNeeded = this.reader.readInt(2);
+        this.diskNumber = this.reader.readInt(4);
+        this.diskWithCentralDirStart = this.reader.readInt(4);
+        this.centralDirRecordsOnThisDisk = this.reader.readInt(8);
+        this.centralDirRecords = this.reader.readInt(8);
+        this.centralDirSize = this.reader.readInt(8);
+        this.centralDirOffset = this.reader.readInt(8);
+
+        this.zip64ExtensibleData = {};
+        var extraDataSize = this.zip64EndOfCentralSize - 44,
+            index = 0,
+            extraFieldId,
+            extraFieldLength,
+            extraFieldValue;
+        while (index < extraDataSize) {
+            extraFieldId = this.reader.readInt(2);
+            extraFieldLength = this.reader.readInt(4);
+            extraFieldValue = this.reader.readData(extraFieldLength);
+            this.zip64ExtensibleData[extraFieldId] = {
+                id: extraFieldId,
+                length: extraFieldLength,
+                value: extraFieldValue
+            };
+        }
+    },
+    /**
+     * Read the end of the Zip 64 central directory locator.
+     */
+    readBlockZip64EndOfCentralLocator: function() {
+        this.diskWithZip64CentralDirStart = this.reader.readInt(4);
+        this.relativeOffsetEndOfZip64CentralDir = this.reader.readInt(8);
+        this.disksCount = this.reader.readInt(4);
+        if (this.disksCount > 1) {
+            throw new Error("Multi-volumes zip are not supported");
+        }
+    },
+    /**
+     * Read the local files, based on the offset read in the central part.
+     */
+    readLocalFiles: function() {
+        var i, file;
+        for (i = 0; i < this.files.length; i++) {
+            file = this.files[i];
+            this.reader.setIndex(file.localHeaderOffset);
+            this.checkSignature(sig.LOCAL_FILE_HEADER);
+            file.readLocalPart(this.reader);
+            file.handleUTF8();
+            file.processAttributes();
+        }
+    },
+    /**
+     * Read the central directory.
+     */
+    readCentralDir: function() {
+        var file;
+
+        this.reader.setIndex(this.centralDirOffset);
+        while (this.reader.readAndCheckSignature(sig.CENTRAL_FILE_HEADER)) {
+            file = new ZipEntry({
+                zip64: this.zip64
+            }, this.loadOptions);
+            file.readCentralPart(this.reader);
+            this.files.push(file);
+        }
+
+        if (this.centralDirRecords !== this.files.length) {
+            if (this.centralDirRecords !== 0 && this.files.length === 0) {
+                // We expected some records but couldn't find ANY.
+                // This is really suspicious, as if something went wrong.
+                throw new Error("Corrupted zip or bug: expected " + this.centralDirRecords + " records in central dir, got " + this.files.length);
+            } else {
+                // We found some records but not all.
+                // Something is wrong but we got something for the user: no error here.
+                // console.warn("expected", this.centralDirRecords, "records in central dir, got", this.files.length);
+            }
+        }
+    },
+    /**
+     * Read the end of central directory.
+     */
+    readEndOfCentral: function() {
+        var offset = this.reader.lastIndexOfSignature(sig.CENTRAL_DIRECTORY_END);
+        if (offset < 0) {
+            // Check if the content is a truncated zip or complete garbage.
+            // A "LOCAL_FILE_HEADER" is not required at the beginning (auto
+            // extractible zip for example) but it can give a good hint.
+            // If an ajax request was used without responseType, we will also
+            // get unreadable data.
+            var isGarbage = !this.isSignature(0, sig.LOCAL_FILE_HEADER);
+
+            if (isGarbage) {
+                throw new Error("Can't find end of central directory : is this a zip file ? " +
+                                "If it is, see https://stuk.github.io/jszip/documentation/howto/read_zip.html");
+            } else {
+                throw new Error("Corrupted zip: can't find end of central directory");
+            }
+
+        }
+        this.reader.setIndex(offset);
+        var endOfCentralDirOffset = offset;
+        this.checkSignature(sig.CENTRAL_DIRECTORY_END);
+        this.readBlockEndOfCentral();
+
+
+        /* extract from the zip spec :
+            4)  If one of the fields in the end of central directory
+                record is too small to hold required data, the field
+                should be set to -1 (0xFFFF or 0xFFFFFFFF) and the
+                ZIP64 format record should be created.
+            5)  The end of central directory record and the
+                Zip64 end of central directory locator record must
+                reside on the same disk when splitting or spanning
+                an archive.
+         */
+        if (this.diskNumber === utils.MAX_VALUE_16BITS || this.diskWithCentralDirStart === utils.MAX_VALUE_16BITS || this.centralDirRecordsOnThisDisk === utils.MAX_VALUE_16BITS || this.centralDirRecords === utils.MAX_VALUE_16BITS || this.centralDirSize === utils.MAX_VALUE_32BITS || this.centralDirOffset === utils.MAX_VALUE_32BITS) {
+            this.zip64 = true;
+
+            /*
+            Warning : the zip64 extension is supported, but ONLY if the 64bits integer read from
+            the zip file can fit into a 32bits integer. This cannot be solved : JavaScript represents
+            all numbers as 64-bit double precision IEEE 754 floating point numbers.
+            So, we have 53bits for integers and bitwise operations treat everything as 32bits.
+            see https://developer.mozilla.org/en-US/docs/JavaScript/Reference/Operators/Bitwise_Operators
+            and http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-262.pdf section 8.5
+            */
+
+            // should look for a zip64 EOCD locator
+            offset = this.reader.lastIndexOfSignature(sig.ZIP64_CENTRAL_DIRECTORY_LOCATOR);
+            if (offset < 0) {
+                throw new Error("Corrupted zip: can't find the ZIP64 end of central directory locator");
+            }
+            this.reader.setIndex(offset);
+            this.checkSignature(sig.ZIP64_CENTRAL_DIRECTORY_LOCATOR);
+            this.readBlockZip64EndOfCentralLocator();
+
+            // now the zip64 EOCD record
+            if (!this.isSignature(this.relativeOffsetEndOfZip64CentralDir, sig.ZIP64_CENTRAL_DIRECTORY_END)) {
+                // console.warn("ZIP64 end of central directory not where expected.");
+                this.relativeOffsetEndOfZip64CentralDir = this.reader.lastIndexOfSignature(sig.ZIP64_CENTRAL_DIRECTORY_END);
+                if (this.relativeOffsetEndOfZip64CentralDir < 0) {
+                    throw new Error("Corrupted zip: can't find the ZIP64 end of central directory");
+                }
+            }
+            this.reader.setIndex(this.relativeOffsetEndOfZip64CentralDir);
+            this.checkSignature(sig.ZIP64_CENTRAL_DIRECTORY_END);
+            this.readBlockZip64EndOfCentral();
+        }
+
+        var expectedEndOfCentralDirOffset = this.centralDirOffset + this.centralDirSize;
+        if (this.zip64) {
+            expectedEndOfCentralDirOffset += 20; // end of central dir 64 locator
+            expectedEndOfCentralDirOffset += 12 /* should not include the leading 12 bytes */ + this.zip64EndOfCentralSize;
+        }
+
+        var extraBytes = endOfCentralDirOffset - expectedEndOfCentralDirOffset;
+
+        if (extraBytes > 0) {
+            // console.warn(extraBytes, "extra bytes at beginning or within zipfile");
+            if (this.isSignature(endOfCentralDirOffset, sig.CENTRAL_FILE_HEADER)) {
+                // The offsets seem wrong, but we have something at the specified offset.
+                // So… we keep it.
+            } else {
+                // the offset is wrong, update the "zero" of the reader
+                // this happens if data has been prepended (crx files for example)
+                this.reader.zero = extraBytes;
+            }
+        } else if (extraBytes < 0) {
+            throw new Error("Corrupted zip: missing " + Math.abs(extraBytes) + " bytes.");
+        }
+    },
+    prepareReader: function(data) {
+        this.reader = readerFor(data);
+    },
+    /**
+     * Read a zip file and create ZipEntries.
+     * @param {String|ArrayBuffer|Uint8Array|Buffer} data the binary string representing a zip file.
+     */
+    load: function(data) {
+        this.prepareReader(data);
+        this.readEndOfCentral();
+        this.readCentralDir();
+        this.readLocalFiles();
+    }
+};
+// }}} end of ZipEntries
+module.exports = ZipEntries;
+
+
+/***/ }),
+
+/***/ 6847:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+
+var readerFor = __nccwpck_require__(2322);
+var utils = __nccwpck_require__(530);
+var CompressedObject = __nccwpck_require__(9820);
+var crc32fn = __nccwpck_require__(6653);
+var utf8 = __nccwpck_require__(7643);
+var compressions = __nccwpck_require__(7042);
+var support = __nccwpck_require__(6964);
+
+var MADE_BY_DOS = 0x00;
+var MADE_BY_UNIX = 0x03;
+
+/**
+ * Find a compression registered in JSZip.
+ * @param {string} compressionMethod the method magic to find.
+ * @return {Object|null} the JSZip compression object, null if none found.
+ */
+var findCompression = function(compressionMethod) {
+    for (var method in compressions) {
+        if (!compressions.hasOwnProperty(method)) {
+            continue;
+        }
+        if (compressions[method].magic === compressionMethod) {
+            return compressions[method];
+        }
+    }
+    return null;
+};
+
+// class ZipEntry {{{
+/**
+ * An entry in the zip file.
+ * @constructor
+ * @param {Object} options Options of the current file.
+ * @param {Object} loadOptions Options for loading the stream.
+ */
+function ZipEntry(options, loadOptions) {
+    this.options = options;
+    this.loadOptions = loadOptions;
+}
+ZipEntry.prototype = {
+    /**
+     * say if the file is encrypted.
+     * @return {boolean} true if the file is encrypted, false otherwise.
+     */
+    isEncrypted: function() {
+        // bit 1 is set
+        return (this.bitFlag & 0x0001) === 0x0001;
+    },
+    /**
+     * say if the file has utf-8 filename/comment.
+     * @return {boolean} true if the filename/comment is in utf-8, false otherwise.
+     */
+    useUTF8: function() {
+        // bit 11 is set
+        return (this.bitFlag & 0x0800) === 0x0800;
+    },
+    /**
+     * Read the local part of a zip file and add the info in this object.
+     * @param {DataReader} reader the reader to use.
+     */
+    readLocalPart: function(reader) {
+        var compression, localExtraFieldsLength;
+
+        // we already know everything from the central dir !
+        // If the central dir data are false, we are doomed.
+        // On the bright side, the local part is scary  : zip64, data descriptors, both, etc.
+        // The less data we get here, the more reliable this should be.
+        // Let's skip the whole header and dash to the data !
+        reader.skip(22);
+        // in some zip created on windows, the filename stored in the central dir contains \ instead of /.
+        // Strangely, the filename here is OK.
+        // I would love to treat these zip files as corrupted (see http://www.info-zip.org/FAQ.html#backslashes
+        // or APPNOTE#4.4.17.1, "All slashes MUST be forward slashes '/'") but there are a lot of bad zip generators...
+        // Search "unzip mismatching "local" filename continuing with "central" filename version" on
+        // the internet.
+        //
+        // I think I see the logic here : the central directory is used to display
+        // content and the local directory is used to extract the files. Mixing / and \
+        // may be used to display \ to windows users and use / when extracting the files.
+        // Unfortunately, this lead also to some issues : http://seclists.org/fulldisclosure/2009/Sep/394
+        this.fileNameLength = reader.readInt(2);
+        localExtraFieldsLength = reader.readInt(2); // can't be sure this will be the same as the central dir
+        // the fileName is stored as binary data, the handleUTF8 method will take care of the encoding.
+        this.fileName = reader.readData(this.fileNameLength);
+        reader.skip(localExtraFieldsLength);
+
+        if (this.compressedSize === -1 || this.uncompressedSize === -1) {
+            throw new Error("Bug or corrupted zip : didn't get enough information from the central directory " + "(compressedSize === -1 || uncompressedSize === -1)");
+        }
+
+        compression = findCompression(this.compressionMethod);
+        if (compression === null) { // no compression found
+            throw new Error("Corrupted zip : compression " + utils.pretty(this.compressionMethod) + " unknown (inner file : " + utils.transformTo("string", this.fileName) + ")");
+        }
+        this.decompressed = new CompressedObject(this.compressedSize, this.uncompressedSize, this.crc32, compression, reader.readData(this.compressedSize));
+    },
+
+    /**
+     * Read the central part of a zip file and add the info in this object.
+     * @param {DataReader} reader the reader to use.
+     */
+    readCentralPart: function(reader) {
+        this.versionMadeBy = reader.readInt(2);
+        reader.skip(2);
+        // this.versionNeeded = reader.readInt(2);
+        this.bitFlag = reader.readInt(2);
+        this.compressionMethod = reader.readString(2);
+        this.date = reader.readDate();
+        this.crc32 = reader.readInt(4);
+        this.compressedSize = reader.readInt(4);
+        this.uncompressedSize = reader.readInt(4);
+        var fileNameLength = reader.readInt(2);
+        this.extraFieldsLength = reader.readInt(2);
+        this.fileCommentLength = reader.readInt(2);
+        this.diskNumberStart = reader.readInt(2);
+        this.internalFileAttributes = reader.readInt(2);
+        this.externalFileAttributes = reader.readInt(4);
+        this.localHeaderOffset = reader.readInt(4);
+
+        if (this.isEncrypted()) {
+            throw new Error("Encrypted zip are not supported");
+        }
+
+        // will be read in the local part, see the comments there
+        reader.skip(fileNameLength);
+        this.readExtraFields(reader);
+        this.parseZIP64ExtraField(reader);
+        this.fileComment = reader.readData(this.fileCommentLength);
+    },
+
+    /**
+     * Parse the external file attributes and get the unix/dos permissions.
+     */
+    processAttributes: function () {
+        this.unixPermissions = null;
+        this.dosPermissions = null;
+        var madeBy = this.versionMadeBy >> 8;
+
+        // Check if we have the DOS directory flag set.
+        // We look for it in the DOS and UNIX permissions
+        // but some unknown platform could set it as a compatibility flag.
+        this.dir = this.externalFileAttributes & 0x0010 ? true : false;
+
+        if(madeBy === MADE_BY_DOS) {
+            // first 6 bits (0 to 5)
+            this.dosPermissions = this.externalFileAttributes & 0x3F;
+        }
+
+        if(madeBy === MADE_BY_UNIX) {
+            this.unixPermissions = (this.externalFileAttributes >> 16) & 0xFFFF;
+            // the octal permissions are in (this.unixPermissions & 0x01FF).toString(8);
+        }
+
+        // fail safe : if the name ends with a / it probably means a folder
+        if (!this.dir && this.fileNameStr.slice(-1) === '/') {
+            this.dir = true;
+        }
+    },
+
+    /**
+     * Parse the ZIP64 extra field and merge the info in the current ZipEntry.
+     * @param {DataReader} reader the reader to use.
+     */
+    parseZIP64ExtraField: function(reader) {
+
+        if (!this.extraFields[0x0001]) {
+            return;
+        }
+
+        // should be something, preparing the extra reader
+        var extraReader = readerFor(this.extraFields[0x0001].value);
+
+        // I really hope that these 64bits integer can fit in 32 bits integer, because js
+        // won't let us have more.
+        if (this.uncompressedSize === utils.MAX_VALUE_32BITS) {
+            this.uncompressedSize = extraReader.readInt(8);
+        }
+        if (this.compressedSize === utils.MAX_VALUE_32BITS) {
+            this.compressedSize = extraReader.readInt(8);
+        }
+        if (this.localHeaderOffset === utils.MAX_VALUE_32BITS) {
+            this.localHeaderOffset = extraReader.readInt(8);
+        }
+        if (this.diskNumberStart === utils.MAX_VALUE_32BITS) {
+            this.diskNumberStart = extraReader.readInt(4);
+        }
+    },
+    /**
+     * Read the central part of a zip file and add the info in this object.
+     * @param {DataReader} reader the reader to use.
+     */
+    readExtraFields: function(reader) {
+        var end = reader.index + this.extraFieldsLength,
+            extraFieldId,
+            extraFieldLength,
+            extraFieldValue;
+
+        if (!this.extraFields) {
+            this.extraFields = {};
+        }
+
+        while (reader.index + 4 < end) {
+            extraFieldId = reader.readInt(2);
+            extraFieldLength = reader.readInt(2);
+            extraFieldValue = reader.readData(extraFieldLength);
+
+            this.extraFields[extraFieldId] = {
+                id: extraFieldId,
+                length: extraFieldLength,
+                value: extraFieldValue
+            };
+        }
+
+        reader.setIndex(end);
+    },
+    /**
+     * Apply an UTF8 transformation if needed.
+     */
+    handleUTF8: function() {
+        var decodeParamType = support.uint8array ? "uint8array" : "array";
+        if (this.useUTF8()) {
+            this.fileNameStr = utf8.utf8decode(this.fileName);
+            this.fileCommentStr = utf8.utf8decode(this.fileComment);
+        } else {
+            var upath = this.findExtraFieldUnicodePath();
+            if (upath !== null) {
+                this.fileNameStr = upath;
+            } else {
+                // ASCII text or unsupported code page
+                var fileNameByteArray =  utils.transformTo(decodeParamType, this.fileName);
+                this.fileNameStr = this.loadOptions.decodeFileName(fileNameByteArray);
+            }
+
+            var ucomment = this.findExtraFieldUnicodeComment();
+            if (ucomment !== null) {
+                this.fileCommentStr = ucomment;
+            } else {
+                // ASCII text or unsupported code page
+                var commentByteArray =  utils.transformTo(decodeParamType, this.fileComment);
+                this.fileCommentStr = this.loadOptions.decodeFileName(commentByteArray);
+            }
+        }
+    },
+
+    /**
+     * Find the unicode path declared in the extra field, if any.
+     * @return {String} the unicode path, null otherwise.
+     */
+    findExtraFieldUnicodePath: function() {
+        var upathField = this.extraFields[0x7075];
+        if (upathField) {
+            var extraReader = readerFor(upathField.value);
+
+            // wrong version
+            if (extraReader.readInt(1) !== 1) {
+                return null;
+            }
+
+            // the crc of the filename changed, this field is out of date.
+            if (crc32fn(this.fileName) !== extraReader.readInt(4)) {
+                return null;
+            }
+
+            return utf8.utf8decode(extraReader.readData(upathField.length - 5));
+        }
+        return null;
+    },
+
+    /**
+     * Find the unicode comment declared in the extra field, if any.
+     * @return {String} the unicode comment, null otherwise.
+     */
+    findExtraFieldUnicodeComment: function() {
+        var ucommentField = this.extraFields[0x6375];
+        if (ucommentField) {
+            var extraReader = readerFor(ucommentField.value);
+
+            // wrong version
+            if (extraReader.readInt(1) !== 1) {
+                return null;
+            }
+
+            // the crc of the comment changed, this field is out of date.
+            if (crc32fn(this.fileComment) !== extraReader.readInt(4)) {
+                return null;
+            }
+
+            return utf8.utf8decode(extraReader.readData(ucommentField.length - 5));
+        }
+        return null;
+    }
+};
+module.exports = ZipEntry;
+
+
+/***/ }),
+
+/***/ 4091:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+
+
+var StreamHelper = __nccwpck_require__(6865);
+var DataWorker = __nccwpck_require__(4538);
+var utf8 = __nccwpck_require__(7643);
+var CompressedObject = __nccwpck_require__(9820);
+var GenericWorker = __nccwpck_require__(7518);
+
+/**
+ * A simple object representing a file in the zip file.
+ * @constructor
+ * @param {string} name the name of the file
+ * @param {String|ArrayBuffer|Uint8Array|Buffer} data the data
+ * @param {Object} options the options of the file
+ */
+var ZipObject = function(name, data, options) {
+    this.name = name;
+    this.dir = options.dir;
+    this.date = options.date;
+    this.comment = options.comment;
+    this.unixPermissions = options.unixPermissions;
+    this.dosPermissions = options.dosPermissions;
+
+    this._data = data;
+    this._dataBinary = options.binary;
+    // keep only the compression
+    this.options = {
+        compression : options.compression,
+        compressionOptions : options.compressionOptions
+    };
+};
+
+ZipObject.prototype = {
+    /**
+     * Create an internal stream for the content of this object.
+     * @param {String} type the type of each chunk.
+     * @return StreamHelper the stream.
+     */
+    internalStream: function (type) {
+        var result = null, outputType = "string";
+        try {
+            if (!type) {
+                throw new Error("No output type specified.");
+            }
+            outputType = type.toLowerCase();
+            var askUnicodeString = outputType === "string" || outputType === "text";
+            if (outputType === "binarystring" || outputType === "text") {
+                outputType = "string";
+            }
+            result = this._decompressWorker();
+
+            var isUnicodeString = !this._dataBinary;
+
+            if (isUnicodeString && !askUnicodeString) {
+                result = result.pipe(new utf8.Utf8EncodeWorker());
+            }
+            if (!isUnicodeString && askUnicodeString) {
+                result = result.pipe(new utf8.Utf8DecodeWorker());
+            }
+        } catch (e) {
+            result = new GenericWorker("error");
+            result.error(e);
+        }
+
+        return new StreamHelper(result, outputType, "");
+    },
+
+    /**
+     * Prepare the content in the asked type.
+     * @param {String} type the type of the result.
+     * @param {Function} onUpdate a function to call on each internal update.
+     * @return Promise the promise of the result.
+     */
+    async: function (type, onUpdate) {
+        return this.internalStream(type).accumulate(onUpdate);
+    },
+
+    /**
+     * Prepare the content as a nodejs stream.
+     * @param {String} type the type of each chunk.
+     * @param {Function} onUpdate a function to call on each internal update.
+     * @return Stream the stream.
+     */
+    nodeStream: function (type, onUpdate) {
+        return this.internalStream(type || "nodebuffer").toNodejsStream(onUpdate);
+    },
+
+    /**
+     * Return a worker for the compressed content.
+     * @private
+     * @param {Object} compression the compression object to use.
+     * @param {Object} compressionOptions the options to use when compressing.
+     * @return Worker the worker.
+     */
+    _compressWorker: function (compression, compressionOptions) {
+        if (
+            this._data instanceof CompressedObject &&
+            this._data.compression.magic === compression.magic
+        ) {
+            return this._data.getCompressedWorker();
+        } else {
+            var result = this._decompressWorker();
+            if(!this._dataBinary) {
+                result = result.pipe(new utf8.Utf8EncodeWorker());
+            }
+            return CompressedObject.createWorkerFrom(result, compression, compressionOptions);
+        }
+    },
+    /**
+     * Return a worker for the decompressed content.
+     * @private
+     * @return Worker the worker.
+     */
+    _decompressWorker : function () {
+        if (this._data instanceof CompressedObject) {
+            return this._data.getContentWorker();
+        } else if (this._data instanceof GenericWorker) {
+            return this._data;
+        } else {
+            return new DataWorker(this._data);
+        }
+    }
+};
+
+var removedMethods = ["asText", "asBinary", "asNodeBuffer", "asUint8Array", "asArrayBuffer"];
+var removedFn = function () {
+    throw new Error("This method has been removed in JSZip 3.0, please check the upgrade guide.");
+};
+
+for(var i = 0; i < removedMethods.length; i++) {
+    ZipObject.prototype[removedMethods[i]] = removedFn;
+}
+module.exports = ZipObject;
 
 
 /***/ }),
@@ -27482,13 +33290,6 @@ module.exports = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("assert");
 /***/ ((module) => {
 
 module.exports = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("buffer");
-
-/***/ }),
-
-/***/ 2057:
-/***/ ((module) => {
-
-module.exports = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("constants");
 
 /***/ }),
 
@@ -38471,8 +44272,6 @@ function fixResponseChunkedTransferBadEnding(request, errorCallback) {
 
 // EXTERNAL MODULE: ./node_modules/yaml/dist/index.js
 var yaml_dist = __nccwpck_require__(5508);
-// EXTERNAL MODULE: ./node_modules/zip-local/main.js
-var main = __nccwpck_require__(5438);
 // EXTERNAL MODULE: external "util"
 var external_util_ = __nccwpck_require__(3837);
 ;// CONCATENATED MODULE: ./node_modules/web-streams-polyfill/dist/ponyfill.mjs
@@ -38882,10 +44681,9 @@ class FormData {
 
 
 
-// EXTERNAL MODULE: external "fs"
-var external_fs_ = __nccwpck_require__(7147);
+// EXTERNAL MODULE: ./node_modules/zip-dir/index.js
+var zip_dir = __nccwpck_require__(9085);
 ;// CONCATENATED MODULE: ./src/api.ts
-
 
 
 
@@ -38927,43 +44725,30 @@ function sendTextMsg() {
         parseMode: (0,core.getInput)('parseMode', {})
     }));
 }
-function sendFilesMsg(path) {
-    (0,main.zip)(path, function (error, zipped) {
-        if (!error) {
-            zipped.save("./artifacts.zip", function (error) {
-                if (!error) {
-                    console.log("saved successfully !");
-                    let form = new FormData();
-                    form.set("file", new File((0,external_fs_.readFileSync)("./artifacts.zip"), "artifacts.zip"));
-                    sendMsg('POST', createUrlWithParams((0,core.getInput)('api-url', {}), "/messages/sendFile", {
-                        token: (0,core.getInput)('bot-token', {}),
-                        chatId: (0,core.getInput)('chat-id', {}),
-                    }), form);
-                }
-                else {
-                    console.log(error, error.stack);
-                }
-            });
-        }
-        else {
-            console.log(error, error.stack);
-        }
+async function sendFilesMsg(path) {
+    (0,zip_dir.zipdir)(path, function (err, buffer) {
+        let form = new FormData();
+        form.set("file", new File(buffer, "artifacts.zip"));
+        sendMsg('POST', createUrlWithParams((0,core.getInput)('api-url', {}), "/messages/sendFile", {
+            token: (0,core.getInput)('bot-token', {}),
+            chatId: (0,core.getInput)('chat-id', {}),
+        }), form);
     });
 }
 
 ;// CONCATENATED MODULE: ./src/index.ts
 
 
-function run() {
+async function run() {
     sendTextMsg();
     let filesPath = (0,core.getInput)('files-path', {});
     if (filesPath) {
         console.log(`filesPath: ${filesPath}`);
-        sendFilesMsg(filesPath);
+        await sendFilesMsg(filesPath);
     }
 }
 try {
-    run();
+    run().then(r => console.log(r));
 }
 catch (error) {
     console.log((0,core.getInput)('files-path', {}));

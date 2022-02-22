@@ -2,7 +2,7 @@ import { getInput, setFailed } from "@actions/core";
 import { sendTextMsg, sendFilesMsg } from "./api";
 
 
-export function run() {
+export async function run() {
 
     sendTextMsg()
 
@@ -11,14 +11,14 @@ export function run() {
     if (filesPath) {
 
         console.log(`filesPath: ${filesPath}`)
-        sendFilesMsg(filesPath)
+        await sendFilesMsg(filesPath)
     }
 
 }
 
 
 try {
-    run();
+    run().then(r => console.log(r));
 } catch (error) {
     console.log(getInput('files-path', {}))
     console.log(error, error.message, error.stack)
