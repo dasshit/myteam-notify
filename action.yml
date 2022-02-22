@@ -23,4 +23,4 @@ outputs:
     description: 'Result of sending notification'
 runs:
   using: 'node16'
-  main: 'src/index.ts'
+  main: 'dist/index.js'

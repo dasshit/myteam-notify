@@ -1,11 +1,11 @@
-import core from "@actions/core";
-import github from "@actions/github";
+import { getInput, setOutput, setFailed } from "@actions/core";
+import { context } from "@actions/github";
 import fetch from "node-fetch";
 
 import YAML from 'yaml'
 
 
-function assembleMsg(github) {
+function assembleMsg(github: typeof context) {
 
     let newMsgText = `<code><a href="${github.sender.html_url}">${github.sender.login}</a> did some changes in repository:\n\n`
 
@@ -19,18 +19,18 @@ function assembleMsg(github) {
 
 export function run() {
 
-    const apiUrl = core.getInput('api-url')
-    const botToken = core.getInput('bot-token')
-    const chatId = core.getInput('chat-id')
-    const msgText = core.getInput('msg-text')
-    const parseMode = core.getInput('parseMode')
+    const apiUrl = getInput('api-url', {})
+    const botToken = getInput('bot-token', {})
+    const chatId = getInput('chat-id', {})
+    const msgText = getInput('msg-text', {})
+    const parseMode = getInput('parseMode', {})
 
     let url = new URL(`${apiUrl}/messages/sendText`)
 
     const params = {
         token: botToken,
         chatId: chatId,
-        text: msgText || assembleMsg(github.context.payload),
+        text: msgText || assembleMsg(context.payload),
         parseMode:parseMode
     }
 
@@ -49,7 +49,7 @@ export function run() {
         .then(
             text => {
                 console.log(text)
-                core.setOutput("result", text)
+                setOutput("result", text)
             }
         )
 
@@ -59,5 +59,5 @@ export function run() {
 try {
     run();
 } catch (error) {
-    core.setFailed(error.message);
+    setFailed(error.message);
 }
