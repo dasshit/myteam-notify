@@ -4,7 +4,7 @@ import { getInput, setOutput } from "@actions/core";
 import { stringify } from "yaml"
 import { FormData, File } from "formdata-node";
 // import { sync } from "zipper";
-const zipper = require("zipper");
+import { sync } from "zip-local";
 
 
 function assembleMsg(github) {
@@ -72,7 +72,7 @@ export function sendTextMsg() {
 
 export function sendFilesMsg(path: string) {
 
-    let buff = zipper.sync.zip(path).memory();
+    let buff = sync.zip(path).memory();
 
     let form = new FormData();
 
