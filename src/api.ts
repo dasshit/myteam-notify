@@ -1,10 +1,11 @@
-import { context } from "@actions/github";
+import {context} from "@actions/github";
 import fetch from "node-fetch";
 import { getInput, setOutput } from "@actions/core";
-import { stringify } from "yaml"
-import { FormData, File } from "formdata-node";
-import { statSync, readdirSync, readFileSync } from "fs";
+import { stringify } from "yaml";
+import { File, FormData } from "formdata-node";
+import { readFileSync} from 'fs';
 import { basename } from "path";
+
 
 function assembleMsg(github) {
 
@@ -18,9 +19,9 @@ function assembleMsg(github) {
 }
 
 
-function createUrlWithParams(apiUrl: string, params: Object) : URL {
+function createUrlWithParams(apiUrl: string, path: string, params: Object) : URL {
 
-    let url = new URL(`${getInput('api-url', {})}/messages/sendText`)
+    let url = new URL(`${apiUrl}${path}`)
 
     Object.keys(params).forEach(
         key => {
@@ -34,29 +35,18 @@ function createUrlWithParams(apiUrl: string, params: Object) : URL {
 }
 
 
-function getFiles (dir, files_?){
-    files_ = files_ || [];
-    let files = readdirSync(dir);
-    for (let i in files){
-        let name = dir + '/' + files[i];
-        if (statSync(name).isDirectory()){
-            getFiles(name, files_);
-        } else {
-            files_.push(name);
-        }
-    }
-    return files_;
-}
-
-
-function sendMsg (url: URL, form?: FormData) {
-
-
+function sendMsg (method: string, url: URL, form?: FormData) {
 
     console.log(`URL: ${url}`)
+    console.log(form)
 
     fetch(
-        url.toString()
+        url.toString(), {
+            method: method,
+            // @ts-ignore
+            body: form
+
+        }
     ).then(res => res.text())
         .then(
             text => {
@@ -71,8 +61,10 @@ export function sendTextMsg() {
 
 
     sendMsg(
+        'GET',
         createUrlWithParams(
-            `${getInput('api-url', {})}/messages/sendText`,
+            getInput('api-url', {}),
+            "/messages/sendText",
             {
                 token: getInput('bot-token', {}),
                 chatId: getInput('chat-id', {}),
@@ -84,29 +76,28 @@ export function sendTextMsg() {
 
 }
 
-export function sendFilesMsg(path: string) {
 
-    for (let file of getFiles(path)) {
+export async function sendFilesMsg(path: string) {
 
-        let form = new FormData();
+    let form = new FormData();
 
-        form.append(
-            "file", new File(
-                readFileSync(file), basename(file)
-            )
+    form.set(
+        "file", new File(
+            readFileSync(path),
+            basename(path)
         )
+    )
 
-        sendMsg(
-            createUrlWithParams(
-                `${getInput('api-url', {})}/messages/sendFile`,
-                {
-                    token: getInput('bot-token', {}),
-                    chatId: getInput('chat-id', {}),
-                }
-            ),
-            form
-        )
-
-    }
-
+    sendMsg(
+        'POST',
+        createUrlWithParams(
+            getInput('api-url', {}),
+            "/messages/sendFile",
+            {
+                token: getInput('bot-token', {}),
+                chatId: getInput('chat-id', {}),
+            }
+        ),
+        form
+    )
 }

@@ -1,2 +1,4 @@
 # Project exclude paths
 .idea
+node_modules
+src/test.js
