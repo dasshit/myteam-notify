@@ -23956,21 +23956,11 @@ function sendTextMsg() {
 }
 async function sendFilesMsg(path) {
     let form = new FormData();
-    (0,external_fs_.open)(path, 'r', function (status, fd) {
-        if (status) {
-            console.log(status.message);
-            return;
-        }
-        let buffer = Buffer.alloc(100);
-        (0,external_fs_.read)(fd, buffer, 0, 100, 0, function (err, num) {
-            console.log(buffer);
-            form.set("file", new File(buffer, (0,external_path_.basename)(path)));
-            sendMsg('POST', createUrlWithParams((0,core.getInput)('api-url', {}), "/messages/sendFile", {
-                token: (0,core.getInput)('bot-token', {}),
-                chatId: (0,core.getInput)('chat-id', {}),
-            }), form);
-        });
-    });
+    form.set("file", new File((0,external_fs_.readFileSync)(path), (0,external_path_.basename)(path)));
+    sendMsg('POST', createUrlWithParams((0,core.getInput)('api-url', {}), "/messages/sendFile", {
+        token: (0,core.getInput)('bot-token', {}),
+        chatId: (0,core.getInput)('chat-id', {}),
+    }), form);
 }
 
 ;// CONCATENATED MODULE: ./src/index.ts

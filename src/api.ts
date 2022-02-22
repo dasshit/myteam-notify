@@ -3,7 +3,7 @@ import fetch from "node-fetch";
 import { getInput, setOutput } from "@actions/core";
 import { stringify } from "yaml";
 import { File, FormData } from "formdata-node";
-import { createWriteStream, createReadStream, open, read } from 'fs';
+import {createWriteStream, createReadStream, open, read, readFileSync} from 'fs';
 import { basename } from "path";
 
 
@@ -81,33 +81,23 @@ export async function sendFilesMsg(path: string) {
 
     let form = new FormData();
 
-    open(path, 'r', function(status, fd) {
-        if (status) {
-            console.log(status.message);
-            return;
-        }
-        let buffer = Buffer.alloc(100);
-        read(fd, buffer, 0, 100, 0, function(err, num) {
-            console.log(buffer);
-            form.set(
-                "file", new File(
-                    buffer,
-                    basename(path)
-                )
-            )
+    form.set(
+        "file", new File(
+            readFileSync(path),
+            basename(path)
+        )
+    )
 
-            sendMsg(
-                'POST',
-                createUrlWithParams(
-                    getInput('api-url', {}),
-                    "/messages/sendFile",
-                    {
-                        token: getInput('bot-token', {}),
-                        chatId: getInput('chat-id', {}),
-                    }
-                ),
-                form
-            )
-        });
-    });
+    sendMsg(
+        'POST',
+        createUrlWithParams(
+            getInput('api-url', {}),
+            "/messages/sendFile",
+            {
+                token: getInput('bot-token', {}),
+                chatId: getInput('chat-id', {}),
+            }
+        ),
+        form
+    )
 }
