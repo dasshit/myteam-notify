@@ -18,6 +18,9 @@ inputs:
     description: 'Msg text formatting mode'
     required: false
     default: 'HTML'
+  files-path:
+    required: false
+    description: 'Files path in current container for sending them to Bot API'
 outputs:
   result: # id of output
     description: 'Result of sending notification'
