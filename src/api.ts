@@ -1,10 +1,10 @@
 import { context } from "@actions/github";
 import fetch from "node-fetch";
 import { getInput, setOutput } from "@actions/core";
-import { stringify } from "yaml"
-import { FormData, File } from "formdata-node";
-// import { sync } from "zipper";
+import { stringify } from "yaml";
 import { sync } from "zip-local";
+import {readFileSync} from "fs";
+import { FormData } from "./FormData";
 
 
 function assembleMsg(github) {
@@ -72,14 +72,24 @@ export function sendTextMsg() {
 
 export function sendFilesMsg(path: string) {
 
-    let buff = sync.zip(path).memory();
+    sync.zip(path, function(error, zipped) {
+
+        if(!error) {
+            zipped.compress(); // compress before exporting
+
+            // or save the zipped file to disk
+            zipped.save("./artifacts.zip", function(error) {
+                if(!error) {
+                    console.log("saved successfully !");
+                }
+            });
+        }
+    });
 
     let form = new FormData();
 
-    form.append(
-        "file", new File(
-            buff, "artifacts.zip"
-        )
+    form.appendFile(
+        "file", "./artifacts.zip"
     )
 
     sendMsg(
