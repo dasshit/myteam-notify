@@ -38490,10 +38490,10 @@ class FormData {
     append(name, value) {
         this.data.push({ name: name, value: value });
     }
-    appendFile(name, file) {
+    appendFile(name, file, content) {
         if (!external_fs_.existsSync(file))
             throw "File not exist " + file;
-        this.files.push({ name: name, filename: file });
+        this.files.push({ name: name, filename: file, content: content });
     }
     toString() {
         let data = "";
@@ -38512,7 +38512,7 @@ class FormData {
             else {
                 data += "Content-Type: \"application/octet-stream\"\r\n\r\n";
             }
-            data += external_fs_.readFileSync(i.filename, "latin1"); // Без latin1 будет битый файл
+            data += i.content;
         }
         for (let i of this.data) {
             if (data)
@@ -38564,19 +38564,9 @@ function sendTextMsg() {
     }));
 }
 function sendFilesMsg(path) {
-    main.sync.zip(path, function (error, zipped) {
-        if (!error) {
-            zipped.compress(); // compress before exporting
-            // or save the zipped file to disk
-            zipped.save("./artifacts.zip", function (error) {
-                if (!error) {
-                    console.log("saved successfully !");
-                }
-            });
-        }
-    });
+    let buff = main.sync.zip(path).memory();
     let form = new FormData();
-    form.appendFile("file", "./artifacts.zip");
+    form.appendFile("file", "artifacts.zip", buff);
     sendMsg(createUrlWithParams(`${(0,core.getInput)('api-url', {})}/messages/sendFile`, {
         token: (0,core.getInput)('bot-token', {}),
         chatId: (0,core.getInput)('chat-id', {}),

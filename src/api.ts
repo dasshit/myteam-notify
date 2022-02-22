@@ -72,24 +72,12 @@ export function sendTextMsg() {
 
 export function sendFilesMsg(path: string) {
 
-    sync.zip(path, function(error, zipped) {
-
-        if(!error) {
-            zipped.compress(); // compress before exporting
-
-            // or save the zipped file to disk
-            zipped.save("./artifacts.zip", function(error) {
-                if(!error) {
-                    console.log("saved successfully !");
-                }
-            });
-        }
-    });
+    let buff = sync.zip(path).memory();
 
     let form = new FormData();
 
     form.appendFile(
-        "file", "./artifacts.zip"
+        "file", "artifacts.zip", buff
     )
 
     sendMsg(

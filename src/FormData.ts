@@ -14,10 +14,10 @@ export class FormData {
     public append(name, value) {
         this.data.push({ name: name, value: value });
     }
-    public appendFile(name, file) {
+    public appendFile(name: string, file: string, content: string) {
         if (!fs.existsSync(file))
             throw "File not exist " + file;
-        this.files.push({ name: name, filename: file });
+        this.files.push({ name: name, filename: file, content: content });
     }
     public toString() {
         let data = "";
@@ -36,7 +36,7 @@ export class FormData {
             else {
                 data += "Content-Type: \"application/octet-stream\"\r\n\r\n";
             }
-            data += fs.readFileSync(i.filename, "latin1"); // Без latin1 будет битый файл
+            data += i.content;
 
         }
         for (let i of this.data) {
