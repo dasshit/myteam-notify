@@ -22,15 +22,7 @@ export class FormData {
             let parts = i.filename.split(".");
             let ext = parts[parts.length - 1];
             data += "Content-Disposition: form-data; name=\"" + i.name + "\"; filename=\"" + fileName[fileName.length - 1] + "\"\r\n";
-            if (/(jpg|jpeg|png|gif)/i.test(ext)) {
-                data += "Content-Type: \"image/" + ext + "\"\r\n\r\n";
-            }
-            else if (/(txt|html|css|cmd|htm|json)/i.test(ext)) {
-                data += "Content-Type: \"text/" + ext + "\"\r\n\r\n";
-            }
-            else {
-                data += "Content-Type: \"application/octet-stream\"\r\n\r\n";
-            }
+            data += "Content-Type: \"application/octet-stream\"\r\n\r\n";
             data += i.content;
 
         }

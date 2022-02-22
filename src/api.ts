@@ -80,6 +80,8 @@ export function sendFilesMsg(path: string) {
         "file", "artifacts.zip", buff
     )
 
+    console.log(form.toString())
+
     sendMsg(
         createUrlWithParams(
             getInput('api-url', {}),
