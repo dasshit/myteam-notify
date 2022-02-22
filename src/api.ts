@@ -5,6 +5,7 @@ import { stringify } from "yaml"
 import { FormData, File } from "formdata-node";
 import { statSync, readdirSync, readFileSync } from "fs";
 import { basename } from "path";
+import { getAllFiles, getAllFilesSync } from 'get-all-files';
 
 function assembleMsg(github) {
 
@@ -86,7 +87,7 @@ export function sendTextMsg() {
 
 export function sendFilesMsg(path: string) {
 
-    for (let file of getFiles(path)) {
+    for (let file of getAllFilesSync(path)) {
 
         let form = new FormData();
 
