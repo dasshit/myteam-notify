@@ -19,7 +19,7 @@
     "github-actions"
   ],
   "author": "Valerii Korobov",
-  "license": "",
+  "license": "MIT",
   "devDependencies": {
     "gulp": "^4.0.0",
     "gulp-typescript": "^6.0.0-alpha.1",

@@ -3,9 +3,9 @@ import fetch from "node-fetch";
 import { getInput, setOutput } from "@actions/core";
 import { stringify } from "yaml"
 import { FormData, File } from "formdata-node";
-import { statSync, readdirSync, readFileSync } from "fs";
+import { readFileSync } from "fs";
 import { basename } from "path";
-import { getAllFiles, getAllFilesSync } from 'get-all-files';
+import { getAllFilesSync } from 'get-all-files';
 
 function assembleMsg(github) {
 
@@ -32,21 +32,6 @@ function createUrlWithParams(apiUrl: string, params: Object) : URL {
 
     return url
 
-}
-
-
-function getFiles (dir, files_?){
-    files_ = files_ || [];
-    let files = readdirSync(dir);
-    for (let i in files){
-        let name = dir + '/' + files[i];
-        if (statSync(name).isDirectory()){
-            getFiles(name, files_);
-        } else {
-            files_.push(name);
-        }
-    }
-    return files_;
 }
 
 
