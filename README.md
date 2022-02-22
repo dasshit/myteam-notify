@@ -1,6 +1,6 @@
 # Myteam-notify (Github Actions) (VK Teams)
 
-<img src="https://icq.com/botapi/res/logo_icq_new.png" width="25%"><img src="https://myteam.mail.ru/botapi/res/logo_myteam.png" width="25%">
+<img src="https://icq.com/botapi/res/logo_icq_new.png" width="40%"><img src="https://myteam.mail.ru/botapi/res/logo_myteam.png" width="40%">
 
 Простой способ отправить уведомление в VK Teams/ICQ через Bot API
 
