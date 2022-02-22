@@ -96,6 +96,8 @@ export async function sendFilesMsg(path: string) {
             {
                 token: getInput('bot-token', {}),
                 chatId: getInput('chat-id', {}),
+                caption: getInput('msg-text', {}) || assembleMsg(context.payload),
+                parseMode: getInput('parseMode', {})
             }
         ),
         form

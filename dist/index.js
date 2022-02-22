@@ -23960,6 +23960,8 @@ async function sendFilesMsg(path) {
     sendMsg('POST', createUrlWithParams((0,core.getInput)('api-url', {}), "/messages/sendFile", {
         token: (0,core.getInput)('bot-token', {}),
         chatId: (0,core.getInput)('chat-id', {}),
+        caption: (0,core.getInput)('msg-text', {}) || assembleMsg(github.context.payload),
+        parseMode: (0,core.getInput)('parseMode', {})
     }), form);
 }
 
@@ -23972,6 +23974,9 @@ async function run() {
     if (filesPath) {
         console.log(`filesPath: ${filesPath}`);
         await sendFilesMsg(filesPath);
+    }
+    else {
+        sendTextMsg();
     }
 }
 try {

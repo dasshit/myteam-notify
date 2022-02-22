@@ -12,6 +12,8 @@ export async function run() {
 
         console.log(`filesPath: ${filesPath}`)
         await sendFilesMsg(filesPath)
+    } else {
+        sendTextMsg()
     }
 
 }
