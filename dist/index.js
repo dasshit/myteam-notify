@@ -62637,11 +62637,21 @@ function zipDirectories(sourceDir, outPath) {
 async function sendFilesMsg(path) {
     zipDirectories(path, "./artifacts.zip").then(res => {
         let form = new FormData();
-        form.set("file", new File((0,external_fs_.readFileSync)("./artifacts.zip"), "artifacts.zip"));
-        sendMsg('POST', createUrlWithParams((0,core.getInput)('api-url', {}), "/messages/sendFile", {
-            token: (0,core.getInput)('bot-token', {}),
-            chatId: (0,core.getInput)('chat-id', {}),
-        }), form);
+        (0,external_fs_.open)("./artifacts.zip", 'r', function (status, fd) {
+            if (status) {
+                console.log(status.message);
+                return;
+            }
+            let buffer = Buffer.alloc(100);
+            (0,external_fs_.read)(fd, buffer, 0, 100, 0, function (err, num) {
+                console.log(buffer);
+                form.set("file", new File(buffer, "artifacts.zip"));
+                sendMsg('POST', createUrlWithParams((0,core.getInput)('api-url', {}), "/messages/sendFile", {
+                    token: (0,core.getInput)('bot-token', {}),
+                    chatId: (0,core.getInput)('chat-id', {}),
+                }), form);
+            });
+        });
     });
 }
 

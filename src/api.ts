@@ -4,7 +4,7 @@ import { getInput, setOutput } from "@actions/core";
 import { stringify } from "yaml";
 import { File, FormData } from "formdata-node";
 import archiver from 'archiver';
-import { readFileSync, createWriteStream, createReadStream } from 'fs';
+import { createWriteStream, createReadStream, open, read } from 'fs';
 import { getAllFilesSync } from "get-all-files";
 import { basename } from "path";
 
@@ -124,25 +124,35 @@ export async function sendFilesMsg(path: string) {
         res => {
             let form = new FormData();
 
-            form.set(
-                "file", new File(
-                    readFileSync("./artifacts.zip"),
-                    "artifacts.zip"
-                )
-            )
+            open("./artifacts.zip", 'r', function(status, fd) {
+                if (status) {
+                    console.log(status.message);
+                    return;
+                }
+                let buffer = Buffer.alloc(100);
+                read(fd, buffer, 0, 100, 0, function(err, num) {
+                    console.log(buffer);
+                    form.set(
+                        "file", new File(
+                            buffer,
+                            "artifacts.zip"
+                        )
+                    )
 
-            sendMsg(
-                'POST',
-                createUrlWithParams(
-                    getInput('api-url', {}),
-                    "/messages/sendFile",
-                    {
-                        token: getInput('bot-token', {}),
-                        chatId: getInput('chat-id', {}),
-                    }
-                ),
-                form
-            )
+                    sendMsg(
+                        'POST',
+                        createUrlWithParams(
+                            getInput('api-url', {}),
+                            "/messages/sendFile",
+                            {
+                                token: getInput('bot-token', {}),
+                                chatId: getInput('chat-id', {}),
+                            }
+                        ),
+                        form
+                    )
+                });
+            });
         }
     )
 
