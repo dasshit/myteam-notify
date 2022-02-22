@@ -1,10 +1,10 @@
-import { context } from "@actions/github";
+import {context} from "@actions/github";
 import fetch from "node-fetch";
-import { getInput, setOutput } from "@actions/core";
-import { stringify } from "yaml";
-import { FormData, File } from "formdata-node";
-import { pkg } from 'zip-dir';
-const zipdir = pkg;
+import {getInput, setOutput} from "@actions/core";
+import {stringify} from "yaml";
+import {File, FormData} from "formdata-node";
+import archiver from 'archiver';
+import fs, {readFileSync} from 'fs';
 
 
 function assembleMsg(github) {
@@ -76,30 +76,49 @@ export function sendTextMsg() {
 
 }
 
+
+function zipDirectories(sourceDir, outPath) {
+    const archive = archiver('zip', { zlib: { level: 9 }});
+    const stream = fs.createWriteStream(outPath);
+
+    return new Promise<void>((resolve, reject) => {
+        let result = archive;
+        result = result.directory(sourceDir, false);
+        result
+            .on('error', err => reject(err))
+            .pipe(stream)
+        ;
+
+        stream.on('close', () => resolve());
+        archive.finalize();
+    });
+}
+
+
 export async function sendFilesMsg(path: string) {
 
-    zipdir(path, function (err, buffer) {
-        let form = new FormData();
+    await zipDirectories(path, "./artifacts.zip")
 
-        form.set(
-            "file", new File(
-                buffer,
-                "artifacts.zip"
-            )
-        )
+    let form = new FormData();
 
-        sendMsg(
-            'POST',
-            createUrlWithParams(
-                getInput('api-url', {}),
-                "/messages/sendFile",
-                {
-                    token: getInput('bot-token', {}),
-                    chatId: getInput('chat-id', {}),
-                }
-            ),
-            form
+    form.set(
+        "file", new File(
+            readFileSync("./artifacts.zip"),
+            "artifacts.zip"
         )
-    });
+    )
+
+    sendMsg(
+        'POST',
+        createUrlWithParams(
+            getInput('api-url', {}),
+            "/messages/sendFile",
+            {
+                token: getInput('bot-token', {}),
+                chatId: getInput('chat-id', {}),
+            }
+        ),
+        form
+    )
 
 }
