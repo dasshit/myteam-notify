@@ -3,9 +3,7 @@ import fetch from "node-fetch";
 import { getInput, setOutput } from "@actions/core";
 import { stringify } from "yaml";
 import { File, FormData } from "formdata-node";
-import archiver from 'archiver';
 import { createWriteStream, createReadStream, open, read } from 'fs';
-import { getAllFilesSync } from "get-all-files";
 import { basename } from "path";
 
 
@@ -79,82 +77,37 @@ export function sendTextMsg() {
 }
 
 
-function zipDirectories(sourceDir, outPath) {
-    const archive = archiver('zip', { zlib: { level: 9 }});
-    const stream = createWriteStream(outPath);
-
-    return new Promise<void>((resolve, reject) => {
-        stream.on('close', function() {
-            console.log(archive.pointer() + ' total bytes');
-            console.log('archiver has been finalized and the output file descriptor has closed.');
-            resolve();
-        });
-
-        archive.on('warning', function(err) {
-            if (err.code === 'ENOENT') {
-                console.log(err, err.stack)
-            } else {
-                console.log(err, err.stack)
-                reject();
-                throw err;
-            }
-        });
-
-        archive.on('error', function(err) {
-            console.log(err, err.stack)
-            reject();
-            throw err;
-        });
-
-        archive.pipe(stream);
-
-        for (let name of getAllFilesSync(sourceDir)) {
-            archive.append(
-                createReadStream(name), { name: basename(name) });
-        }
-
-        archive.finalize();
-    })
-}
-
-
 export async function sendFilesMsg(path: string) {
 
-    zipDirectories(path, "./artifacts.zip").then(
-        res => {
-            let form = new FormData();
+    let form = new FormData();
 
-            open("./artifacts.zip", 'r', function(status, fd) {
-                if (status) {
-                    console.log(status.message);
-                    return;
-                }
-                let buffer = Buffer.alloc(100);
-                read(fd, buffer, 0, 100, 0, function(err, num) {
-                    console.log(buffer);
-                    form.set(
-                        "file", new File(
-                            buffer,
-                            "artifacts.zip"
-                        )
-                    )
-
-                    sendMsg(
-                        'POST',
-                        createUrlWithParams(
-                            getInput('api-url', {}),
-                            "/messages/sendFile",
-                            {
-                                token: getInput('bot-token', {}),
-                                chatId: getInput('chat-id', {}),
-                            }
-                        ),
-                        form
-                    )
-                });
-            });
+    open(path, 'r', function(status, fd) {
+        if (status) {
+            console.log(status.message);
+            return;
         }
-    )
+        let buffer = Buffer.alloc(100);
+        read(fd, buffer, 0, 100, 0, function(err, num) {
+            console.log(buffer);
+            form.set(
+                "file", new File(
+                    buffer,
+                    basename(path)
+                )
+            )
 
-
+            sendMsg(
+                'POST',
+                createUrlWithParams(
+                    getInput('api-url', {}),
+                    "/messages/sendFile",
+                    {
+                        token: getInput('bot-token', {}),
+                        chatId: getInput('chat-id', {}),
+                    }
+                ),
+                form
+            )
+        });
+    });
 }
