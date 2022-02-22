@@ -2,3 +2,5 @@
 .idea
 node_modules
 src/test.js
+src/.DS_Store
+.DS_Store

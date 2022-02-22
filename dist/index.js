@@ -23969,7 +23969,6 @@ async function sendFilesMsg(path) {
 
 
 async function run() {
-    sendTextMsg();
     let filesPath = (0,core.getInput)('files-path', {});
     if (filesPath) {
         console.log(`filesPath: ${filesPath}`);
@@ -23983,9 +23982,7 @@ try {
     run().then(r => console.log(r));
 }
 catch (error) {
-    console.log((0,core.getInput)('files-path', {}));
     console.log(error, error.message, error.stack);
-    console.error(error, error.message, error.stack);
     (0,core.setFailed)(error.message);
 }
 
