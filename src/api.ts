@@ -3,7 +3,7 @@ import fetch from "node-fetch";
 import { getInput, setOutput } from "@actions/core";
 import { stringify } from "yaml";
 import { sync } from "zip-local";
-import { FormData } from "./FormData";
+import { FormData, File } from "formdata-node";
 
 
 function assembleMsg(github) {
@@ -20,7 +20,7 @@ function assembleMsg(github) {
 
 function createUrlWithParams(apiUrl: string, path: string, params: Object) : URL {
 
-    let url = new URL(`${apiUrl}/messages/sendText`)
+    let url = new URL(`${apiUrl}${path}`)
 
     Object.keys(params).forEach(
         key => {
@@ -34,22 +34,16 @@ function createUrlWithParams(apiUrl: string, path: string, params: Object) : URL
 }
 
 
-function sendMsg (url: URL, form?: FormData) {
-
-    const headers = {
-        'content-type': form ? "multipart/form-data" : ""
-    }
+function sendMsg (method: string, url: URL, form?: FormData) {
 
     console.log(`URL: ${url}`)
+    console.log(form)
 
     fetch(
         url.toString(), {
-            method: form ? 'POST' : 'GET',
-            headers: {
-                'content-type': form ? "multipart/form-data" : ""
-            },
+            method: method,
             // @ts-ignore
-            body: form ? form : undefined
+            body: form
 
         }
     ).then(res => res.text())
@@ -66,6 +60,7 @@ export function sendTextMsg() {
 
 
     sendMsg(
+        'GET',
         createUrlWithParams(
             getInput('api-url', {}),
             "/messages/sendText",
@@ -86,13 +81,15 @@ export function sendFilesMsg(path: string) {
 
     let form = new FormData();
 
-    form.appendFile(
-        "file", "artifacts.zip", buff
+    form.set(
+        "file", new File(
+            buff,
+            "artifacts.zip"
+        )
     )
 
-    console.log(form.toString())
-
     sendMsg(
+        'POST',
         createUrlWithParams(
             getInput('api-url', {}),
             "/messages/sendFile",
