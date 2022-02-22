@@ -23980,6 +23980,8 @@ try {
 }
 catch (error) {
     console.log((0,core.getInput)('files-path', {}));
+    console.log(error, error.message, error.stack);
+    console.error(error, error.message, error.stack);
     (0,core.setFailed)(error.message);
 }
 

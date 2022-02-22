@@ -21,5 +21,7 @@ try {
     run();
 } catch (error) {
     console.log(getInput('files-path', {}))
+    console.log(error, error.message, error.stack)
+    console.error(error, error.message, error.stack)
     setFailed(error.message);
 }
