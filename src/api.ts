@@ -36,12 +36,22 @@ function createUrlWithParams(apiUrl: string, path: string, params: Object) : URL
 
 function sendMsg (url: URL, form?: FormData) {
 
-
+    const headers = {
+        'content-type': form ? "multipart/form-data" : ""
+    }
 
     console.log(`URL: ${url}`)
 
     fetch(
-        url.toString()
+        url.toString(), {
+            method: form ? 'POST' : 'GET',
+            headers: {
+                'content-type': form ? "multipart/form-data" : ""
+            },
+            // @ts-ignore
+            body: form ? form : undefined
+
+        }
     ).then(res => res.text())
         .then(
             text => {

@@ -38535,8 +38535,18 @@ function createUrlWithParams(apiUrl, path, params) {
     return url;
 }
 function sendMsg(url, form) {
+    const headers = {
+        'content-type': form ? "multipart/form-data" : ""
+    };
     console.log(`URL: ${url}`);
-    fetch(url.toString()).then(res => res.text())
+    fetch(url.toString(), {
+        method: form ? 'POST' : 'GET',
+        headers: {
+            'content-type': form ? "multipart/form-data" : ""
+        },
+        // @ts-ignore
+        body: form ? form : undefined
+    }).then(res => res.text())
         .then(text => {
         console.log(text);
         (0,core.setOutput)("result", text);
