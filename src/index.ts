@@ -6,7 +6,7 @@ export function run() {
 
     sendTextMsg()
 
-    let filesPath = getInput('bot-token', {})
+    let filesPath = getInput('files-path', {})
 
     if (filesPath) {
 

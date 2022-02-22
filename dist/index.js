@@ -38935,7 +38935,7 @@ function sendFilesMsg(path) {
 
 function run() {
     sendTextMsg();
-    let filesPath = (0,core.getInput)('bot-token', {});
+    let filesPath = (0,core.getInput)('files-path', {});
     if (filesPath) {
         console.log(`filesPath: ${filesPath}`);
         sendFilesMsg(filesPath);
