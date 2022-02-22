@@ -15093,6 +15093,7 @@ exports.prettifyError = prettifyError;
 /***/ 5508:
 /***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
+var __webpack_unused_export__;
 
 
 var composer = __nccwpck_require__(6526);
@@ -15115,35 +15116,35 @@ var visit = __nccwpck_require__(6180);
 
 
 
-exports.Composer = composer.Composer;
-exports.Document = Document.Document;
-exports.Schema = Schema.Schema;
-exports.YAMLError = errors.YAMLError;
-exports.YAMLParseError = errors.YAMLParseError;
-exports.YAMLWarning = errors.YAMLWarning;
-exports.Alias = Alias.Alias;
-exports.isAlias = Node.isAlias;
-exports.isCollection = Node.isCollection;
-exports.isDocument = Node.isDocument;
-exports.isMap = Node.isMap;
-exports.isNode = Node.isNode;
-exports.isPair = Node.isPair;
-exports.isScalar = Node.isScalar;
-exports.isSeq = Node.isSeq;
-exports.Pair = Pair.Pair;
-exports.Scalar = Scalar.Scalar;
-exports.YAMLMap = YAMLMap.YAMLMap;
-exports.YAMLSeq = YAMLSeq.YAMLSeq;
-exports.defaultOptions = options.defaultOptions;
-exports.CST = cst;
-exports.Lexer = lexer.Lexer;
-exports.LineCounter = lineCounter.LineCounter;
-exports.Parser = parser.Parser;
-exports.parse = publicApi.parse;
-exports.parseAllDocuments = publicApi.parseAllDocuments;
-exports.parseDocument = publicApi.parseDocument;
-exports.stringify = publicApi.stringify;
-exports.visit = visit.visit;
+__webpack_unused_export__ = composer.Composer;
+__webpack_unused_export__ = Document.Document;
+__webpack_unused_export__ = Schema.Schema;
+__webpack_unused_export__ = errors.YAMLError;
+__webpack_unused_export__ = errors.YAMLParseError;
+__webpack_unused_export__ = errors.YAMLWarning;
+__webpack_unused_export__ = Alias.Alias;
+__webpack_unused_export__ = Node.isAlias;
+__webpack_unused_export__ = Node.isCollection;
+__webpack_unused_export__ = Node.isDocument;
+__webpack_unused_export__ = Node.isMap;
+__webpack_unused_export__ = Node.isNode;
+__webpack_unused_export__ = Node.isPair;
+__webpack_unused_export__ = Node.isScalar;
+__webpack_unused_export__ = Node.isSeq;
+__webpack_unused_export__ = Pair.Pair;
+__webpack_unused_export__ = Scalar.Scalar;
+__webpack_unused_export__ = YAMLMap.YAMLMap;
+__webpack_unused_export__ = YAMLSeq.YAMLSeq;
+__webpack_unused_export__ = options.defaultOptions;
+__webpack_unused_export__ = cst;
+__webpack_unused_export__ = lexer.Lexer;
+__webpack_unused_export__ = lineCounter.LineCounter;
+__webpack_unused_export__ = parser.Parser;
+__webpack_unused_export__ = publicApi.parse;
+__webpack_unused_export__ = publicApi.parseAllDocuments;
+__webpack_unused_export__ = publicApi.parseDocument;
+exports.Pz = publicApi.stringify;
+__webpack_unused_export__ = visit.visit;
 
 
 /***/ }),
@@ -23504,7 +23505,7 @@ var yaml_dist = __nccwpck_require__(5508);
 
 function assembleMsg(github) {
     let newMsgText = `<code><a href="${github.sender.html_url}">${github.sender.login}</a> did some changes in repository:\n\n`;
-    newMsgText += yaml_dist.stringify(github.commits);
+    newMsgText += (0,yaml_dist/* stringify */.Pz)(github.commits);
     newMsgText += '</code>';
     return newMsgText;
 }

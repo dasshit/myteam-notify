@@ -2,14 +2,14 @@ import { getInput, setOutput, setFailed } from "@actions/core";
 import { context } from "@actions/github";
 import fetch from "node-fetch";
 
-import YAML from 'yaml'
+import { stringify } from 'yaml'
 
 
-function assembleMsg(github: typeof context) {
+function assembleMsg(github) {
 
     let newMsgText = `<code><a href="${github.sender.html_url}">${github.sender.login}</a> did some changes in repository:\n\n`
 
-    newMsgText += YAML.stringify(github.commits)
+    newMsgText += stringify(github.commits)
 
     newMsgText += '</code>'
 
