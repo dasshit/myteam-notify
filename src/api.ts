@@ -77,7 +77,7 @@ export function sendTextMsg() {
 
 export function sendFilesMsg(path: string) {
 
-    let buff = sync.zip(path).memory();
+    let buff = sync.zip(path).compress();
 
     let form = new FormData();
 

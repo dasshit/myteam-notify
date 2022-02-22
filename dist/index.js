@@ -38925,7 +38925,7 @@ function sendTextMsg() {
     }));
 }
 function sendFilesMsg(path) {
-    let buff = main.sync.zip(path).memory();
+    let buff = main.sync.zip(path).compress();
     let form = new FormData();
     form.set("file", new File(buff, "artifacts.zip"));
     sendMsg('POST', createUrlWithParams((0,core.getInput)('api-url', {}), "/messages/sendFile", {
