@@ -11,7 +11,7 @@ function assembleMsg(github) {
 
     let newMsgText = `<code><a href="${github.sender.html_url}">${github.sender.login}</a> did some changes in repository:\n\n`
 
-    newMsgText += stringify(github.commits)
+    newMsgText += stringify({ commits: github.commits })
 
     newMsgText += '</code>'
 

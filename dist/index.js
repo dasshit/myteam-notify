@@ -23921,7 +23921,7 @@ var external_path_ = __nccwpck_require__(1017);
 
 function assembleMsg(github) {
     let newMsgText = `<code><a href="${github.sender.html_url}">${github.sender.login}</a> did some changes in repository:\n\n`;
-    newMsgText += (0,yaml_dist/* stringify */.Pz)(github.commits);
+    newMsgText += (0,yaml_dist/* stringify */.Pz)({ commits: github.commits });
     newMsgText += '</code>';
     return newMsgText;
 }
